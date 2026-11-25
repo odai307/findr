@@ -11,16 +11,17 @@ import { useWorkspace } from '../lib/workspace';
 export function SearchPage() {
   const { workspace } = useWorkspace();
   const [input, setInput] = useState('');
-  const [mode, setMode] = useState<SearchMode>('keyword');
+  const [mode, setMode] = useState<SearchMode>('hybrid');
   const [query, setQuery] = useState('');
 
   const results = useQuery({
     queryKey: ['search', workspace.id, mode, query],
     enabled: query.length > 0,
     queryFn: () =>
-      api<{ data: SearchHit[]; tookMs: number }>(
-        `/v1/workspaces/${workspace.id}/search?${new URLSearchParams({ q: query, mode })}`,
-      ),
+      api<{ data: SearchHit[]; tookMs: number }>(`/v1/workspaces/${workspace.id}/search`, {
+        method: 'POST',
+        body: JSON.stringify({ query, mode }),
+      }),
   });
 
   function onSubmit(e: FormEvent) {
@@ -44,7 +45,7 @@ export function SearchPage() {
           aria-label="Search mode"
           className="flex rounded-md border border-zinc-300 p-0.5 text-sm dark:border-zinc-700"
         >
-          {(['keyword', 'semantic'] as const).map((m) => (
+          {(['hybrid', 'keyword', 'semantic'] as const).map((m) => (
             <button
               key={m}
               type="button"
@@ -57,7 +58,7 @@ export function SearchPage() {
                   : 'text-zinc-600 dark:text-zinc-400'
               }`}
             >
-              {m === 'keyword' ? 'Keyword' : 'Meaning'}
+              {m === 'hybrid' ? 'Best' : m === 'keyword' ? 'Keyword' : 'Meaning'}
             </button>
           ))}
         </div>
@@ -121,7 +122,7 @@ export function SearchPage() {
                     )}
                   </h3>
                   {/* Rendered as plain text: indexed content is never trusted as HTML. */}
-                  <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{hit.snippet}</p>
+                  <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{hit.snippets[0]}</p>
                 </li>
               ))}
             </ul>

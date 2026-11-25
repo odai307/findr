@@ -4,11 +4,26 @@ import { z } from 'zod';
 import { principalsFor } from '../../auth/principals.js';
 import type { Db } from '../../db/client.js';
 import type { Embedder } from '../../ingestion/embedder.js';
-import { basicSearch } from '../../search/basic.js';
+import { hybridSearch } from '../../search/hybrid.js';
+import { mergeFilters, parseDate, parseQuery } from '../../search/query-parser.js';
 import { getWorkspaceForUser } from '../../workspaces/service.js';
 import { userIdOf } from '../plugins/auth.js';
 
-const hitSchema = z.object({
+const isoDate = z
+  .string()
+  .refine((v) => parseDate(v) !== undefined, 'use YYYY-MM-DD')
+  .transform((v) => parseDate(v)!);
+
+export const filtersSchema = z.object({
+  sources: z.array(z.string().min(1).max(40)).max(10).optional(),
+  types: z.array(z.string().min(1).max(40)).max(10).optional(),
+  from: z.string().min(1).max(100).optional(),
+  in: z.string().min(1).max(200).optional(),
+  after: isoDate.optional(),
+  before: isoDate.optional(),
+});
+
+const resultSchema = z.object({
   documentId: z.string(),
   title: z.string().nullable(),
   url: z.string().nullable(),
@@ -17,8 +32,18 @@ const hitSchema = z.object({
   author: z.string().nullable(),
   container: z.string().nullable(),
   updatedAt: z.date().nullable(),
-  snippet: z.string(),
+  snippets: z.array(z.string()),
+  matchedTerms: z.array(z.string()),
   score: z.number(),
+});
+
+const parsedFiltersOut = z.object({
+  sources: z.array(z.string()).optional(),
+  types: z.array(z.string()).optional(),
+  from: z.string().optional(),
+  in: z.string().optional(),
+  after: z.date().optional(),
+  before: z.date().optional(),
 });
 
 /** Routes under /v1/workspaces/:workspaceId/search */
@@ -29,18 +54,26 @@ export const searchRoutes: FastifyPluginAsync<{ db: Db; embedder: Embedder }> = 
   const app = fastify.withTypeProvider<ZodTypeProvider>();
   app.addHook('onRequest', app.authenticate);
 
-  app.get(
+  app.post(
     '/',
     {
       config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
       schema: {
         params: z.object({ workspaceId: z.uuid() }),
-        querystring: z.object({
-          q: z.string().trim().min(1).max(500),
-          mode: z.enum(['keyword', 'semantic']).default('keyword'),
-          limit: z.coerce.number().int().min(1).max(50).default(10),
+        body: z.object({
+          query: z.string().trim().max(500).default(''),
+          filters: filtersSchema.optional(),
+          mode: z.enum(['hybrid', 'keyword', 'semantic']).default('hybrid'),
+          limit: z.number().int().min(1).max(50).default(10),
         }),
-        response: { 200: z.object({ data: z.array(hitSchema), tookMs: z.number() }) },
+        response: {
+          200: z.object({
+            data: z.array(resultSchema),
+            degraded: z.boolean(),
+            parsed: z.object({ text: z.string(), filters: parsedFiltersOut }),
+            tookMs: z.number(),
+          }),
+        },
       },
     },
     async (request) => {
@@ -48,15 +81,24 @@ export const searchRoutes: FastifyPluginAsync<{ db: Db; embedder: Embedder }> = 
       const userId = userIdOf(request);
       const { workspaceId } = request.params;
       await getWorkspaceForUser(db, workspaceId, userId);
+
+      const typed = parseQuery(request.body.query);
+      const filters = mergeFilters(typed.filters, request.body.filters);
       const principals = await principalsFor(db, userId, workspaceId);
-      const data = await basicSearch(db, embedder, {
+      const { results, degraded } = await hybridSearch(db, embedder, {
         workspaceId,
         principals,
-        query: request.query.q,
-        mode: request.query.mode,
-        limit: request.query.limit,
+        text: typed.text,
+        filters,
+        mode: request.body.mode,
+        limit: request.body.limit,
       });
-      return { data, tookMs: Math.round(performance.now() - started) };
+      return {
+        data: results,
+        degraded,
+        parsed: { text: typed.text, filters },
+        tookMs: Math.round(performance.now() - started),
+      };
     },
   );
 };

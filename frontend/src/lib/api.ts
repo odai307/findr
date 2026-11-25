@@ -156,7 +156,7 @@ export interface Connection {
   lastRun: SyncRun | null;
 }
 
-export type SearchMode = 'keyword' | 'semantic';
+export type SearchMode = 'hybrid' | 'keyword' | 'semantic';
 
 export interface SearchHit {
   documentId: string;
@@ -167,6 +167,7 @@ export interface SearchHit {
   author: string | null;
   container: string | null;
   updatedAt: string | null;
-  snippet: string;
+  snippets: string[];
+  matchedTerms: string[];
   score: number;
 }

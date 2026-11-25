@@ -39,12 +39,15 @@ describe('demo connection + search API', () => {
   }, 180_000);
   afterAll(() => ctx.close());
 
-  const search = (q: string, mode = 'keyword', t = token, ws = workspaceId) =>
+  const search = (query: string, mode = 'hybrid', t = token, ws = workspaceId, extra = {}) =>
     ctx.app.inject({
-      method: 'GET',
-      url: `/v1/workspaces/${ws}/search?q=${encodeURIComponent(q)}&mode=${mode}`,
+      method: 'POST',
+      url: `/v1/workspaces/${ws}/search`,
       headers: as(t),
+      payload: { query, mode, ...extra },
     });
+  const titlesOf = (res: { json(): { data: { title: string }[] } }) =>
+    res.json().data.map((h) => h.title);
 
   it('lists the connection with document counts and the last run', async () => {
     const res = await ctx.app.inject({
@@ -90,7 +93,7 @@ describe('demo connection + search API', () => {
 
   it('never returns documents restricted to a group the user is not in', async () => {
     for (const q of ['Series A runway', 'compensation review increase pool']) {
-      for (const mode of ['keyword', 'semantic']) {
+      for (const mode of ['keyword', 'semantic', 'hybrid']) {
         const titles = (await search(q, mode)).json().data.map((h: { title: string }) => h.title);
         expect(titles).not.toContain('Board update – February 2026');
         expect(titles).not.toContain('Compensation review');
@@ -107,6 +110,49 @@ describe('demo connection + search API', () => {
       headers: as(other),
     });
     expect(list.statusCode).toBe(404);
+  });
+
+  it('hybrid search ranks the right documents first and reports parsed filters', async () => {
+    const res = await search('Project Alpha delivery date');
+    expect(res.statusCode).toBe(200);
+    expect(res.json().degraded).toBe(false);
+    expect(titlesOf(res).slice(0, 5)).toContain('Delivery timeline for Project Alpha');
+  });
+
+  it('applies filters typed in the query before ranking', async () => {
+    const res = await search('Project Alpha type:email after:2026-02-05');
+    const body = res.json();
+    expect(body.parsed.text).toBe('Project Alpha');
+    expect(body.parsed.filters.types).toEqual(['email']);
+    expect(body.data.length).toBeGreaterThan(0);
+    for (const hit of body.data) {
+      expect(hit.type).toBe('email');
+      expect(new Date(hit.updatedAt).getTime()).toBeGreaterThanOrEqual(Date.parse('2026-02-05'));
+    }
+    // Meaning search also returns Esi's other documents, but the filter holds and the budget
+    // email ranks first.
+    const fromEsi = await search('budget from:esi');
+    expect(titlesOf(fromEsi)[0]).toBe('Re: Project Alpha budget');
+    for (const hit of fromEsi.json().data) expect(hit.author).toBe('Esi Owusu');
+    const inChannel = await search('in:#project-alpha');
+    expect(titlesOf(inChannel)).toEqual(['Client confirmed March 15']);
+  });
+
+  it('accepts filters as API fields too', async () => {
+    const res = await search('', 'hybrid', token, workspaceId, {
+      filters: { types: ['message_thread'], in: 'sales' },
+    });
+    expect(titlesOf(res)).toEqual(['Harbor Logistics renewal']);
+  });
+
+  it('groups chunks per document and returns highlightable terms', async () => {
+    const res = await search('vacation carry-over');
+    const [top] = res.json().data;
+    expect(top.title).toBe('Vacation and leave policy');
+    expect(top.matchedTerms).toEqual(['vacation', 'carry-over']);
+    expect(top.snippets.length).toBeGreaterThanOrEqual(1);
+    const ids = res.json().data.map((h: { documentId: string }) => h.documentId);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it('disconnecting removes all of its documents', async () => {
