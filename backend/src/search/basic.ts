@@ -78,7 +78,7 @@ export async function basicSearch(
       ORDER BY score DESC
       LIMIT ${CANDIDATES}`;
   } else {
-    const [vector] = await embedder.embed([opts.query]);
+    const [vector] = await embedder.embed([opts.query], { purpose: 'query' });
     if (!vector || vector.every((x) => x === 0)) return [];
     candidates = sql`
       SELECT c.document_id, c.content, 1 - (c.embedding <=> ${toVectorLiteral(vector)}::halfvec) AS score

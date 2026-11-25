@@ -19,11 +19,11 @@ export function countingEmbedder(base: Embedder = createFakeEmbedder()) {
   const embedder: Embedder = {
     model: base.model,
     dimensions: base.dimensions,
-    async embed(texts, signal) {
+    async embed(texts, options) {
       counter.calls++;
       if (counter.failNext) throw new EmbeddingUnavailableError('simulated outage');
       counter.texts += texts.length;
-      return base.embed(texts, signal);
+      return base.embed(texts, options);
     },
   };
   return { embedder, counter };

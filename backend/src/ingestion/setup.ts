@@ -2,16 +2,31 @@ import type { FastifyBaseLogger as Logger } from 'fastify';
 import { defaultConnectorRegistry, type ConnectorRegistry } from '../connectors/registry.js';
 import type { Db } from '../db/client.js';
 import type { Config } from '../shared/config.js';
-import { createFakeEmbedder, createOpenAIEmbedder, type Embedder } from './embedder.js';
+import {
+  createFakeEmbedder,
+  createGeminiEmbedder,
+  createOpenAIEmbedder,
+  type Embedder,
+} from './embedder.js';
 import { createInProcessScheduler, createQueueScheduler, type SyncScheduler } from './scheduler.js';
 import type { SyncDeps } from './sync.js';
 
+/** Gemini (free tier) if its key is set, else OpenAI, else a fake local embedder (dev only). */
 export function createEmbedder(config: Config, log: Logger): Embedder {
+  if (config.GEMINI_API_KEY) {
+    return createGeminiEmbedder({
+      apiKey: config.GEMINI_API_KEY,
+      model: config.GEMINI_EMBEDDING_MODEL,
+    });
+  }
   if (config.OPENAI_API_KEY) {
-    return createOpenAIEmbedder({ apiKey: config.OPENAI_API_KEY, model: config.EMBEDDING_MODEL });
+    return createOpenAIEmbedder({
+      apiKey: config.OPENAI_API_KEY,
+      model: config.OPENAI_EMBEDDING_MODEL,
+    });
   }
   log.warn(
-    'OPENAI_API_KEY is not set: using a fake local embedder. Meaning-based search will be weak.',
+    'No GEMINI_API_KEY or OPENAI_API_KEY: using a fake local embedder (weak meaning search).',
   );
   return createFakeEmbedder();
 }

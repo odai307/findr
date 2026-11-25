@@ -1,6 +1,6 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { chunks, documentAcl, documents } from '../src/db/schema.js';
+import { chunks, documentAcl, documents, EMBEDDING_DIMENSIONS } from '../src/db/schema.js';
 import {
   backfillEmbeddings,
   indexDocument,
@@ -46,9 +46,11 @@ describe('indexDocument', () => {
     expect(rows[0]!.contextHeader).toBe(
       '[test · page] Doc a | From: Ama Mensah | In: Projects | 2026-02-01',
     );
-    expect(rows.every((c) => c.embedding?.length === 512 && c.acl[0] === 'workspace:ws')).toBe(
-      true,
-    );
+    expect(
+      rows.every(
+        (c) => c.embedding?.length === EMBEDDING_DIMENSIONS && c.acl[0] === 'workspace:ws',
+      ),
+    ).toBe(true);
   });
 
   it('re-indexing unchanged text embeds nothing (gate: re-sync re-embeds 0 chunks)', async () => {
@@ -123,7 +125,7 @@ describe('indexDocument', () => {
 
     counter.failNext = false;
     expect(await backfillEmbeddings(fx.database.db, embedder)).toBe(1);
-    expect((await chunkRows(d!.id))[0]!.embedding).toHaveLength(512);
+    expect((await chunkRows(d!.id))[0]!.embedding).toHaveLength(EMBEDDING_DIMENSIONS);
   });
 
   it('soft-deletes documents and their chunks, and a re-appearing document comes back', async () => {

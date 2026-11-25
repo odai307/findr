@@ -137,8 +137,11 @@ export type WorkspaceRole = (typeof workspaceRole.enumValues)[number];
 // Phase 1: connections, sync runs, documents, access lists and chunks
 // ---------------------------------------------------------------------------
 
-/** Embedding size. 512 instead of 1536 cuts vector storage to a third (fix C1). */
-export const EMBEDDING_DIMENSIONS = 512;
+/**
+ * Embedding size. Fix C1 picked something smaller than the usual 1536 to save storage; 768 is the
+ * smallest size Google recommends for its Gemini embedding models (~1.5 KB per chunk as halfvec).
+ */
+export const EMBEDDING_DIMENSIONS = 768;
 
 const tsvector = customType<{ data: string }>({ dataType: () => 'tsvector' });
 

@@ -61,9 +61,14 @@ export const configSchema = z
         .optional(),
     ),
 
-    /** For embeddings. When unset in development, a local fake embedder is used (keyword-ish only). */
+    /**
+     * Embeddings provider: Gemini (free tier) when its key is set, else OpenAI (paid). With neither,
+     * development falls back to a fake local embedder (keyword-like only).
+     */
+    GEMINI_API_KEY: optionalString,
+    GEMINI_EMBEDDING_MODEL: z.string().default('gemini-embedding-2'),
     OPENAI_API_KEY: optionalString,
-    EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
+    OPENAI_EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
   })
   .superRefine((c, ctx) => {
     if (c.NODE_ENV === 'production' && c.DEV_LOGIN_ENABLED) {
@@ -76,11 +81,11 @@ export const configSchema = z
     if (c.NODE_ENV === 'production' && !c.REDIS_URL) {
       ctx.addIssue({ code: 'custom', path: ['REDIS_URL'], message: 'is required in production' });
     }
-    if (c.NODE_ENV === 'production' && !c.OPENAI_API_KEY) {
+    if (c.NODE_ENV === 'production' && !c.GEMINI_API_KEY && !c.OPENAI_API_KEY) {
       ctx.addIssue({
         code: 'custom',
-        path: ['OPENAI_API_KEY'],
-        message: 'is required in production',
+        path: ['GEMINI_API_KEY'],
+        message: 'an embeddings key (GEMINI_API_KEY or OPENAI_API_KEY) is required in production',
       });
     }
     if (Boolean(c.GOOGLE_CLIENT_ID) !== Boolean(c.GOOGLE_CLIENT_SECRET)) {

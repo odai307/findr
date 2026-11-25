@@ -170,9 +170,18 @@ export async function runSync(
       delete state.fullCursor;
       delete state.pendingIncremental;
     }
-    await backfillEmbeddings(db, deps.embedder, { workspaceId: conn.workspaceId }).catch(
-      (err: unknown) => runLog.warn({ err }, 'Embedding backfill failed; will retry next sync'),
-    );
+    // Fill in vectors that are missing (outage, quota) or from an older model, a page at a time.
+    try {
+      for (let round = 0; round < 20; round++) {
+        const filled = await backfillEmbeddings(db, deps.embedder, {
+          workspaceId: conn.workspaceId,
+        });
+        totals.chunksEmbedded += filled;
+        if (filled === 0) break;
+      }
+    } catch (err) {
+      runLog.warn({ err }, 'Embedding backfill stopped; it continues on the next sync');
+    }
 
     const now = new Date();
     await db

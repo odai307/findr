@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm';
 import type { SourceDocument } from '../connectors/types.js';
 import type { Db } from '../db/client.js';
 import { chunks, documentAcl, documents } from '../db/schema.js';
@@ -126,15 +126,13 @@ export async function indexDocument(
       if (aclChanged) {
         await tx.delete(documentAcl).where(eq(documentAcl.documentId, existing.id));
         if (acl.length) {
-          await tx
-            .insert(documentAcl)
-            .values(
-              acl.map((principal) => ({
-                documentId: existing.id,
-                workspaceId: target.workspaceId,
-                principal,
-              })),
-            );
+          await tx.insert(documentAcl).values(
+            acl.map((principal) => ({
+              documentId: existing.id,
+              workspaceId: target.workspaceId,
+              principal,
+            })),
+          );
         }
       }
     });
@@ -169,7 +167,7 @@ export async function indexDocument(
     try {
       const vectors = await embedder.embed(
         toEmbed.map((p) => `${header}\n\n${p.content}`),
-        signal,
+        { purpose: 'document', ...(signal && { signal }) },
       );
       toEmbed.forEach((p, i) => fresh.set(p.textHash, vectors[i]!));
     } catch (err) {
@@ -271,7 +269,10 @@ export async function softDeleteDocuments(
   });
 }
 
-/** Adds vectors to chunks stored without one (provider outage). Returns how many were filled. */
+/**
+ * Adds vectors to chunks that have none (provider outage, used-up quota) or that were embedded by
+ * a different model (after switching models). Returns how many it filled in this call.
+ */
 export async function backfillEmbeddings(
   db: Db,
   embedder: Embedder,
@@ -282,7 +283,7 @@ export async function backfillEmbeddings(
     .from(chunks)
     .where(
       and(
-        isNull(chunks.embedding),
+        or(isNull(chunks.embedding), ne(chunks.embeddingModel, embedder.model)),
         isNull(chunks.deletedAt),
         opts.workspaceId ? eq(chunks.workspaceId, opts.workspaceId) : undefined,
       ),
@@ -290,7 +291,10 @@ export async function backfillEmbeddings(
     .limit(opts.limit ?? 500);
   if (!pending.length) return 0;
 
-  const vectors = await embedder.embed(pending.map((c) => `${c.header}\n\n${c.content}`));
+  const vectors = await embedder.embed(
+    pending.map((c) => `${c.header}\n\n${c.content}`),
+    { purpose: 'document' },
+  );
   await db.transaction(async (tx) => {
     for (const [i, c] of pending.entries()) {
       await tx
