@@ -126,3 +126,47 @@ export interface Providers {
   google: boolean;
   devLogin: boolean;
 }
+
+export interface SyncRun {
+  kind: 'full' | 'incremental';
+  status: 'running' | 'succeeded' | 'failed';
+  startedAt: string;
+  finishedAt: string | null;
+  itemsSeen: number;
+  itemsUpserted: number;
+  itemsUnchanged: number;
+  itemsDeleted: number;
+  chunksEmbedded: number;
+  chunksReused: number;
+  error: string | null;
+}
+
+export interface Connection {
+  id: string;
+  provider: string;
+  displayName: string;
+  visibility: 'personal' | 'workspace';
+  status: 'active' | 'syncing' | 'paused' | 'error' | 'revoked';
+  isOwner: boolean;
+  documentCount: number;
+  chunkCount: number;
+  lastFullSyncAt: string | null;
+  lastIncrementalSyncAt: string | null;
+  errorMessage: string | null;
+  lastRun: SyncRun | null;
+}
+
+export type SearchMode = 'keyword' | 'semantic';
+
+export interface SearchHit {
+  documentId: string;
+  title: string | null;
+  url: string | null;
+  provider: string;
+  type: string;
+  author: string | null;
+  container: string | null;
+  updatedAt: string | null;
+  snippet: string;
+  score: number;
+}

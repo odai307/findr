@@ -3,9 +3,13 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import './index.css';
+import { Layout } from './components/Layout';
 import { AuthProvider, useAuthStatus } from './lib/auth';
-import { HomePage } from './pages/HomePage';
+import { WorkspaceProvider } from './lib/workspace';
+import { ConnectionsPage } from './pages/ConnectionsPage';
 import { LoginPage } from './pages/LoginPage';
+import { SearchPage } from './pages/SearchPage';
+import { WorkspacesPage } from './pages/WorkspacesPage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -40,13 +44,18 @@ createRoot(document.getElementById('root')!).render(
               }
             />
             <Route
-              path="/"
               element={
                 <Protected>
-                  <HomePage />
+                  <WorkspaceProvider>
+                    <Layout />
+                  </WorkspaceProvider>
                 </Protected>
               }
-            />
+            >
+              <Route index element={<SearchPage />} />
+              <Route path="connections" element={<ConnectionsPage />} />
+              <Route path="workspaces" element={<WorkspacesPage />} />
+            </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>

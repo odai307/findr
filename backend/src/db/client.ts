@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { drizzle as drizzlePglite } from 'drizzle-orm/pglite';
 import { migrate as migratePglite } from 'drizzle-orm/pglite/migrator';
@@ -22,7 +23,8 @@ const migrationsFolder = fileURLToPath(new URL('../../migrations', import.meta.u
 
 /**
  * `pglite:<dir>` → embedded Postgres (WebAssembly) stored in a folder. No server to install.
- *    Only one process can open it at a time, which is fine until the worker needs the DB (phase 1).
+ *    Only one process can open it at a time, so in development sync jobs run inside the API
+ *    process (see ingestion/scheduler.ts).
  * `pglite:memory` → in-memory, for tests.
  * `postgres://…` → a real server (Neon in staging/production).
  */
@@ -31,10 +33,10 @@ export async function openDatabase(url: string): Promise<Database> {
     const location = url.slice('pglite:'.length);
     let client: PGlite;
     if (location === 'memory') {
-      client = new PGlite();
+      client = new PGlite({ extensions: { vector } });
     } else {
       mkdirSync(location, { recursive: true });
-      client = new PGlite(location);
+      client = new PGlite(location, { extensions: { vector } });
     }
     await client.waitReady;
     const db = drizzlePglite(client, { schema }) as unknown as Db;

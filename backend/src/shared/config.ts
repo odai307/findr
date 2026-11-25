@@ -9,6 +9,12 @@ const bool = z
   .default('false')
   .transform((v) => v === 'true');
 
+/** `FOO=` in a .env file means "not set", not "set to an empty string". */
+const optionalString = z.preprocess(
+  (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+  z.string().optional(),
+);
+
 export const configSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -43,6 +49,21 @@ export const configSchema = z
 
     /** Lets you sign in by email without Google, for local development only. */
     DEV_LOGIN_ENABLED: bool,
+
+    /**
+     * Redis for the BullMQ job queues (e.g. an Upstash rediss:// URL). When unset in development,
+     * sync jobs run inside the API process instead, so no Redis is needed locally.
+     */
+    REDIS_URL: optionalString.pipe(
+      z
+        .string()
+        .regex(/^rediss?:\/\//)
+        .optional(),
+    ),
+
+    /** For embeddings. When unset in development, a local fake embedder is used (keyword-ish only). */
+    OPENAI_API_KEY: optionalString,
+    EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
   })
   .superRefine((c, ctx) => {
     if (c.NODE_ENV === 'production' && c.DEV_LOGIN_ENABLED) {
@@ -50,6 +71,16 @@ export const configSchema = z
         code: 'custom',
         path: ['DEV_LOGIN_ENABLED'],
         message: 'must be false in production',
+      });
+    }
+    if (c.NODE_ENV === 'production' && !c.REDIS_URL) {
+      ctx.addIssue({ code: 'custom', path: ['REDIS_URL'], message: 'is required in production' });
+    }
+    if (c.NODE_ENV === 'production' && !c.OPENAI_API_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['OPENAI_API_KEY'],
+        message: 'is required in production',
       });
     }
     if (Boolean(c.GOOGLE_CLIENT_ID) !== Boolean(c.GOOGLE_CLIENT_SECRET)) {

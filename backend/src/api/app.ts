@@ -12,25 +12,33 @@ import { createAccessTokenService } from '../auth/access-tokens.js';
 import { createGoogleAuth } from '../auth/google.js';
 import { createRefreshTokenService } from '../auth/refresh-tokens.js';
 import type { Db } from '../db/client.js';
+import type { SyncScheduler } from '../ingestion/scheduler.js';
+import { createScheduler, createSyncDeps } from '../ingestion/setup.js';
+import type { SyncDeps } from '../ingestion/sync.js';
 import type { Config } from '../shared/config.js';
 import { loggerOptions } from '../shared/logger.js';
 import { authPlugin } from './plugins/auth.js';
 import { errorHandler } from './plugins/errors.js';
 import { authRoutes } from './routes/auth.js';
+import { connectionRoutes } from './routes/connections.js';
 import { healthRoutes } from './routes/health.js';
 import { meRoutes } from './routes/me.js';
+import { searchRoutes } from './routes/search.js';
 import { workspaceRoutes } from './routes/workspaces.js';
 
 export interface AppDeps {
   config: Config;
   db: Db;
+  /** Tests pass their own (fake embedder, test connectors). Built from config otherwise. */
+  sync?: SyncDeps;
+  scheduler?: SyncScheduler;
 }
 
 /**
  * Builds the Fastify app without starting it. Tests call this directly and send requests
  * with app.inject(), so no network port is needed.
  */
-export async function buildApp({ config, db }: AppDeps): Promise<FastifyInstance> {
+export async function buildApp({ config, db, ...overrides }: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({
     logger: loggerOptions(config),
     genReqId: () => `req_${uuidv7()}`,
@@ -61,6 +69,11 @@ export async function buildApp({ config, db }: AppDeps): Promise<FastifyInstance
         })
       : null;
 
+  const sync = overrides.sync ?? createSyncDeps(config, db, app.log);
+  const scheduler = overrides.scheduler ?? createScheduler(config, sync, app.log);
+  // Lets in-process syncs finish (or stop) before the database closes.
+  app.addHook('onClose', () => scheduler.close());
+
   await app.register(authPlugin, { accessTokens });
   await app.register(healthRoutes, { db });
   await app.register(authRoutes, {
@@ -73,6 +86,16 @@ export async function buildApp({ config, db }: AppDeps): Promise<FastifyInstance
   });
   await app.register(meRoutes, { prefix: '/v1', db });
   await app.register(workspaceRoutes, { prefix: '/v1/workspaces', db });
+  await app.register(connectionRoutes, {
+    prefix: '/v1/workspaces/:workspaceId/connections',
+    db,
+    scheduler,
+  });
+  await app.register(searchRoutes, {
+    prefix: '/v1/workspaces/:workspaceId/search',
+    db,
+    embedder: sync.embedder,
+  });
 
   return app;
 }

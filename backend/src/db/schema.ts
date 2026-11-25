@@ -1,6 +1,10 @@
+import { sql } from 'drizzle-orm';
 import {
+  customType,
+  halfvec,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
@@ -12,7 +16,7 @@ import {
 import { v7 as uuidv7 } from 'uuid';
 
 /**
- * Phase 0 tables: identity and tenancy only. Connections, documents and chunks arrive in phase 1.
+ * Identity and tenancy (phase 0), then connections, documents and chunks (phase 1).
  * IDs are UUIDv7 (time-ordered, so new rows land at the end of the index instead of randomly).
  */
 const id = () =>
@@ -128,3 +132,189 @@ export const auditLog = pgTable(
 export type User = typeof users.$inferSelect;
 export type Workspace = typeof workspaces.$inferSelect;
 export type WorkspaceRole = (typeof workspaceRole.enumValues)[number];
+
+// ---------------------------------------------------------------------------
+// Phase 1: connections, sync runs, documents, access lists and chunks
+// ---------------------------------------------------------------------------
+
+/** Embedding size. 512 instead of 1536 cuts vector storage to a third (fix C1). */
+export const EMBEDDING_DIMENSIONS = 512;
+
+const tsvector = customType<{ data: string }>({ dataType: () => 'tsvector' });
+
+export const connectionStatus = pgEnum('connection_status', [
+  'active',
+  'syncing',
+  'paused',
+  'error',
+  'revoked',
+]);
+export const connectionVisibility = pgEnum('connection_visibility', ['personal', 'workspace']);
+
+/**
+ * Where a connection is in its sync. The full-sync cursor is saved after every committed batch,
+ * so a crashed sync resumes instead of starting over.
+ */
+export interface SyncState {
+  /** Resume point inside an unfinished full sync. */
+  fullCursor?: unknown;
+  /** Change token captured when the current full sync started; becomes `incremental` at the end. */
+  pendingIncremental?: unknown;
+  /** Where the next incremental sync starts. */
+  incremental?: unknown;
+}
+
+export const connections = pgTable(
+  'connections',
+  {
+    id: id(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    ownerUserId: uuid('owner_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    provider: text('provider').notNull(),
+    visibility: connectionVisibility('visibility').notNull().default('personal'),
+    externalAccountId: text('external_account_id').notNull(),
+    displayName: text('display_name').notNull(),
+    status: connectionStatus('status').notNull().default('active'),
+    /** Encrypted OAuth tokens (envelope encryption). Arrives with real connectors in phase 4. */
+    encryptedCredentials: text('encrypted_credentials'),
+    syncState: jsonb('sync_state').$type<SyncState>().notNull().default({}),
+    /** Database-level sync lock: a sync owns the connection until this time (renewed by heartbeat). */
+    lockExpiresAt: timestamp('lock_expires_at', { withTimezone: true }),
+    lastFullSyncAt: timestamp('last_full_sync_at', { withTimezone: true }),
+    lastIncrementalSyncAt: timestamp('last_incremental_sync_at', { withTimezone: true }),
+    errorCode: text('error_code'),
+    errorMessage: text('error_message'),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('connections_account_key').on(t.workspaceId, t.provider, t.externalAccountId),
+  ],
+);
+
+export const syncRuns = pgTable(
+  'sync_runs',
+  {
+    id: id(),
+    connectionId: uuid('connection_id')
+      .notNull()
+      .references(() => connections.id, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: ['full', 'incremental'] }).notNull(),
+    status: text('status', { enum: ['running', 'succeeded', 'failed'] }).notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    itemsSeen: integer('items_seen').notNull().default(0),
+    itemsUpserted: integer('items_upserted').notNull().default(0),
+    itemsUnchanged: integer('items_unchanged').notNull().default(0),
+    itemsDeleted: integer('items_deleted').notNull().default(0),
+    chunksEmbedded: integer('chunks_embedded').notNull().default(0),
+    chunksReused: integer('chunks_reused').notNull().default(0),
+    error: text('error'),
+  },
+  (t) => [index('sync_runs_connection_idx').on(t.connectionId, t.startedAt)],
+);
+
+export const documents = pgTable(
+  'documents',
+  {
+    id: id(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    connectionId: uuid('connection_id')
+      .notNull()
+      .references(() => connections.id, { onDelete: 'cascade' }),
+    provider: text('provider').notNull(),
+    externalId: text('external_id').notNull(),
+    type: text('type').notNull(),
+    title: text('title'),
+    url: text('url'),
+    authorName: text('author_name'),
+    authorEmail: text('author_email'),
+    container: text('container'),
+    mimeType: text('mime_type'),
+    /** Hash of everything that gets embedded (header fields + text). Fix C2: excludes the ACL. */
+    textHash: text('text_hash'),
+    sourceCreatedAt: timestamp('source_created_at', { withTimezone: true }),
+    sourceUpdatedAt: timestamp('source_updated_at', { withTimezone: true }),
+    indexedAt: timestamp('indexed_at', { withTimezone: true }),
+    indexStatus: text('index_status', {
+      enum: ['pending', 'indexed', 'awaiting_parser', 'failed'],
+    })
+      .notNull()
+      .default('pending'),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('documents_external_key').on(t.connectionId, t.externalId),
+    index('documents_ws_updated_idx')
+      .on(t.workspaceId, t.sourceUpdatedAt.desc())
+      .where(sql`${t.deletedAt} is null`),
+  ],
+);
+
+/** Source of truth for who may see a document. Fix S5: carries workspace_id for RLS. */
+export const documentAcl = pgTable(
+  'document_acl',
+  {
+    documentId: uuid('document_id')
+      .notNull()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    principal: text('principal').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.documentId, t.principal] }),
+    index('document_acl_principal_idx').on(t.workspaceId, t.principal),
+  ],
+);
+
+export const chunks = pgTable(
+  'chunks',
+  {
+    id: id(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    documentId: uuid('document_id')
+      .notNull()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    chunkIndex: integer('chunk_index').notNull(),
+    contextHeader: text('context_header').notNull(),
+    content: text('content').notNull(),
+    tokenCount: integer('token_count').notNull(),
+    /** Hash of exactly what was embedded (header + content). Fix C3: lets edits reuse embeddings. */
+    textHash: text('text_hash').notNull(),
+    tsv: tsvector('tsv').generatedAlwaysAs(
+      sql`setweight(to_tsvector('english', coalesce(context_header, '')), 'A') || setweight(to_tsvector('english', content), 'B')`,
+    ),
+    embedding: halfvec('embedding', { dimensions: EMBEDDING_DIMENSIONS }),
+    embeddingModel: text('embedding_model'),
+    // Fix Q2: copies of document fields, so search can filter before its LIMIT.
+    acl: text('acl').array().notNull(),
+    provider: text('provider').notNull(),
+    docType: text('doc_type').notNull(),
+    sourceUpdatedAt: timestamp('source_updated_at', { withTimezone: true }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('chunks_document_key').on(t.documentId, t.chunkIndex),
+    index('chunks_tsv_idx').using('gin', t.tsv),
+    index('chunks_acl_idx').using('gin', t.acl),
+    index('chunks_ws_live_idx')
+      .on(t.workspaceId)
+      .where(sql`${t.deletedAt} is null`),
+    index('chunks_reuse_idx').on(t.workspaceId, t.textHash),
+    // Fix Q3: no HNSW index in v1. Exact vector search within one workspace is fast at this size.
+  ],
+);
+
+export type Connection = typeof connections.$inferSelect;
+export type DocumentRow = typeof documents.$inferSelect;
