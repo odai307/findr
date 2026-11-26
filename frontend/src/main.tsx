@@ -7,6 +7,7 @@ import { Layout } from './components/Layout';
 import { AuthProvider, useAuthStatus } from './lib/auth';
 import { WorkspaceProvider } from './lib/workspace';
 import { ConnectionsPage } from './pages/ConnectionsPage';
+import { ConversationsPage } from './pages/ConversationsPage';
 import { LoginPage } from './pages/LoginPage';
 import { SearchPage } from './pages/SearchPage';
 import { WorkspacesPage } from './pages/WorkspacesPage';
@@ -53,6 +54,8 @@ createRoot(document.getElementById('root')!).render(
               }
             >
               <Route index element={<SearchPage />} />
+              <Route path="conversations" element={<ConversationsPage />} />
+              <Route path="conversations/:conversationId" element={<ConversationsPage />} />
               <Route path="connections" element={<ConnectionsPage />} />
               <Route path="workspaces" element={<WorkspacesPage />} />
             </Route>

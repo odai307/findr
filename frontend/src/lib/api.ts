@@ -70,7 +70,15 @@ export function refreshSession(): Promise<boolean> {
   return refreshing;
 }
 
-export async function api<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
+/**
+ * Low-level authorized request: adds the access token and, on a 401, refreshes once and retries.
+ * Returns the raw Response (used directly for streaming answers). Throws ApiError on failure.
+ */
+export async function authorizedFetch(
+  path: string,
+  init: RequestInit = {},
+  retry = true,
+): Promise<Response> {
   const headers = new Headers(init.headers);
   if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
@@ -78,9 +86,14 @@ export async function api<T>(path: string, init: RequestInit = {}, retry = true)
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers, credentials: 'include' });
 
   if (res.status === 401 && retry && !path.startsWith('/v1/auth/')) {
-    if (await refreshSession()) return api<T>(path, init, false);
+    if (await refreshSession()) return authorizedFetch(path, init, false);
   }
   if (!res.ok) throw await parseError(res);
+  return res;
+}
+
+export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await authorizedFetch(path, init);
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
@@ -170,4 +183,53 @@ export interface SearchHit {
   snippets: string[];
   matchedTerms: string[];
   score: number;
+}
+
+export interface SearchFilters {
+  sources?: string[];
+  types?: string[];
+  from?: string;
+  in?: string;
+  /** YYYY-MM-DD when sent; ISO date-time when returned. */
+  after?: string;
+  before?: string;
+}
+
+export interface SearchResponse {
+  data: SearchHit[];
+  degraded: boolean;
+  parsed: { text: string; filters: SearchFilters };
+  tookMs: number;
+}
+
+export interface Citation {
+  n: number;
+  documentId: string;
+  title: string | null;
+  url: string | null;
+  provider: string;
+  type: string;
+  author: string | null;
+  updatedAt: string | null;
+  snippet: string;
+}
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  updatedAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  status: 'complete' | 'error' | 'aborted';
+  rewrittenQuery: string | null;
+  citations: Citation[];
+  createdAt: string;
+}
+
+export interface Conversation extends ConversationSummary {
+  messages: ChatMessage[];
 }

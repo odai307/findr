@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { NavLink, Outlet } from 'react-router';
+import { useEffect } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { logout } from '../lib/api';
 import { useWorkspace } from '../lib/workspace';
 
@@ -13,15 +14,33 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
 export function Layout() {
   const queryClient = useQueryClient();
   const { me, workspace, setWorkspaceId } = useWorkspace();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Ctrl/Cmd+K from any page jumps to the search box (the search page handles it itself).
+  useEffect(() => {
+    if (location.pathname === '/') return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        navigate('/', { state: { focus: true } });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [location.pathname, navigate]);
 
   return (
     <div className="min-h-screen">
       <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mx-auto flex max-w-4xl flex-wrap items-center gap-3 px-4 py-3">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-4 py-3">
           <span className="mr-2 text-lg font-semibold tracking-tight">Findr</span>
           <nav className="flex gap-1">
             <NavLink to="/" end className={navClass}>
               Search
+            </NavLink>
+            <NavLink to="/conversations" className={navClass}>
+              Ask
             </NavLink>
             <NavLink to="/connections" className={navClass}>
               Connections
@@ -68,7 +87,7 @@ export function Layout() {
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-4xl px-4 py-8">
+      <main className="mx-auto max-w-5xl px-4 py-8">
         <Outlet />
       </main>
     </div>
