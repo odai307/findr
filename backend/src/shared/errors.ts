@@ -8,6 +8,7 @@ export type ErrorCode =
   | 'NOT_FOUND'
   | 'CONFLICT'
   | 'RATE_LIMITED'
+  | 'BUDGET_EXCEEDED'
   | 'GOOGLE_NOT_CONFIGURED'
   | 'OAUTH_FAILED'
   | 'INTERNAL';
@@ -21,6 +22,7 @@ const statusByCode: Record<ErrorCode, number> = {
   NOT_FOUND: 404,
   CONFLICT: 409,
   RATE_LIMITED: 429,
+  BUDGET_EXCEEDED: 429,
   GOOGLE_NOT_CONFIGURED: 501,
   OAUTH_FAILED: 400,
   INTERNAL: 500,

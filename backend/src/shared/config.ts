@@ -69,6 +69,16 @@ export const configSchema = z
     GEMINI_EMBEDDING_MODEL: z.string().default('gemini-embedding-2'),
     OPENAI_API_KEY: optionalString,
     OPENAI_EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
+
+    /**
+     * Chat models for AI answers (Gemini free tier, same key). The lite model answers first: on the
+     * free tier it is fast and rarely overloaded. The bigger model is the fallback. Follow-up
+     * rewriting uses the lite model too.
+     */
+    GEMINI_CHAT_MODEL: z.string().default('gemini-flash-lite-latest'),
+    GEMINI_FALLBACK_CHAT_MODEL: z.string().default('gemini-flash-latest'),
+    /** Questions one user may ask per day (each workspace also has its own daily_ask_limit). */
+    USER_DAILY_ASK_LIMIT: z.coerce.number().int().positive().default(50),
   })
   .superRefine((c, ctx) => {
     if (c.NODE_ENV === 'production' && c.DEV_LOGIN_ENABLED) {

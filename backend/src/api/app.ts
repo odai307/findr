@@ -8,6 +8,8 @@ import {
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
 import { v7 as uuidv7 } from 'uuid';
+import type { ChatModel } from '../ai/chat-model.js';
+import { createChatModels } from '../ai/setup.js';
 import { createAccessTokenService } from '../auth/access-tokens.js';
 import { createGoogleAuth } from '../auth/google.js';
 import { createRefreshTokenService } from '../auth/refresh-tokens.js';
@@ -19,6 +21,7 @@ import type { Config } from '../shared/config.js';
 import { loggerOptions } from '../shared/logger.js';
 import { authPlugin } from './plugins/auth.js';
 import { errorHandler } from './plugins/errors.js';
+import { aiRoutes, feedbackRoutes } from './routes/ai.js';
 import { authRoutes } from './routes/auth.js';
 import { connectionRoutes } from './routes/connections.js';
 import { healthRoutes } from './routes/health.js';
@@ -32,6 +35,8 @@ export interface AppDeps {
   /** Tests pass their own (fake embedder, test connectors). Built from config otherwise. */
   sync?: SyncDeps;
   scheduler?: SyncScheduler;
+  /** Tests pass fake chat models. Built from config otherwise. */
+  chat?: { chat: ChatModel; rewriter: ChatModel };
 }
 
 /**
@@ -96,6 +101,14 @@ export async function buildApp({ config, db, ...overrides }: AppDeps): Promise<F
     db,
     embedder: sync.embedder,
   });
+  const models = overrides.chat ?? createChatModels(config, app.log);
+  await app.register(aiRoutes, {
+    prefix: '/v1/workspaces/:workspaceId',
+    db,
+    answers: { db, embedder: sync.embedder, log: app.log, ...models },
+    userDailyAskLimit: config.USER_DAILY_ASK_LIMIT,
+  });
+  await app.register(feedbackRoutes, { prefix: '/v1/messages', db });
 
   return app;
 }

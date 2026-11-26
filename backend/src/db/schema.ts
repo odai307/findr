@@ -321,3 +321,100 @@ export const chunks = pgTable(
 
 export type Connection = typeof connections.$inferSelect;
 export type DocumentRow = typeof documents.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// Core: AI answers (conversations, messages, feedback, usage)
+// ---------------------------------------------------------------------------
+
+/** One numbered source the answer may cite, as sent to the client. */
+export interface Citation {
+  n: number;
+  documentId: string;
+  title: string | null;
+  url: string | null;
+  provider: string;
+  type: string;
+  author: string | null;
+  updatedAt: string | null;
+  snippet: string;
+}
+
+export const conversations = pgTable(
+  'conversations',
+  {
+    id: id(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    ...timestamps,
+  },
+  (t) => [index('conversations_user_idx').on(t.workspaceId, t.userId, t.updatedAt)],
+);
+
+export const messages = pgTable(
+  'messages',
+  {
+    id: id(),
+    conversationId: uuid('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'cascade' }),
+    role: text('role', { enum: ['user', 'assistant'] }).notNull(),
+    content: text('content').notNull(),
+    status: text('status', { enum: ['complete', 'error', 'aborted'] })
+      .notNull()
+      .default('complete'),
+    /** The standalone question actually searched for (follow-ups are rewritten). */
+    rewrittenQuery: text('rewritten_query'),
+    /** Only the sources the answer actually cited. */
+    citations: jsonb('citations').$type<Citation[]>().notNull().default([]),
+    retrievedChunkIds: uuid('retrieved_chunk_ids')
+      .array()
+      .notNull()
+      .default(sql`'{}'::uuid[]`),
+    model: text('model'),
+    promptTokens: integer('prompt_tokens'),
+    completionTokens: integer('completion_tokens'),
+    latencyMs: integer('latency_ms'),
+    ttftMs: integer('ttft_ms'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('messages_conversation_idx').on(t.conversationId, t.createdAt)],
+);
+
+export const feedback = pgTable(
+  'feedback',
+  {
+    id: id(),
+    messageId: uuid('message_id')
+      .notNull()
+      .references(() => messages.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    rating: integer('rating').notNull(),
+    comment: text('comment'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('feedback_message_user_key').on(t.messageId, t.userId)],
+);
+
+export const usageEvents = pgTable(
+  'usage_events',
+  {
+    id: id(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    kind: text('kind', { enum: ['ask', 'rewrite'] }).notNull(),
+    model: text('model').notNull(),
+    promptTokens: integer('prompt_tokens').notNull().default(0),
+    completionTokens: integer('completion_tokens').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('usage_events_ws_idx').on(t.workspaceId, t.createdAt)],
+);
