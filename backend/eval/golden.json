@@ -1,0 +1,383 @@
+{
+  "description": "Search-quality golden set over the Tamarind Labs demo data. 'relevant' lists demo document IDs that should be retrieved; 'forbidden' lists documents the asking user must never see; questions with no relevant documents are unanswerable (used to test refusals).",
+  "questions": [
+    {
+      "id": "f01",
+      "kind": "fact",
+      "question": "INC-2041 duration",
+      "relevant": ["slack-inc-2041", "doc-postmortem-2041"],
+      "answer": "47 minutes (03:12–03:59 UTC on January 21, 2026)"
+    },
+    {
+      "id": "f02",
+      "kind": "fact",
+      "question": "Project Alpha budget amount",
+      "relevant": ["email-alpha-budget", "doc-alpha-plan"],
+      "answer": "$84,000 including a 10% contingency"
+    },
+    {
+      "id": "f03",
+      "kind": "fact",
+      "question": "Pro plan price per seat",
+      "relevant": ["email-pricing-pro"],
+      "answer": "$49 per seat per month"
+    },
+    {
+      "id": "f04",
+      "kind": "fact",
+      "question": "CloudKeep contract monthly cost",
+      "relevant": ["email-cloudkeep-contract"],
+      "answer": "$1,200 per month on a 3-year term"
+    },
+    {
+      "id": "f05",
+      "kind": "fact",
+      "question": "API freeze date for Project Alpha",
+      "relevant": ["slack-alpha-confirmed", "doc-alpha-plan"],
+      "answer": "February 27, 2026"
+    },
+    {
+      "id": "f06",
+      "kind": "fact",
+      "question": "office address after the move",
+      "relevant": ["slack-office-move"],
+      "answer": "14 Riverside Walk, 3rd floor, from April 6"
+    },
+    {
+      "id": "f07",
+      "kind": "fact",
+      "question": "Harbor Logistics renewal date",
+      "relevant": ["slack-harbor-renewal"],
+      "answer": "May 1"
+    },
+    {
+      "id": "f08",
+      "kind": "fact",
+      "question": "Beacon launch target",
+      "relevant": ["doc-beacon-spec"],
+      "answer": "June 2026, with a 20-driver pilot at Harbor Logistics"
+    },
+    {
+      "id": "f09",
+      "kind": "fact",
+      "question": "cost center for map tiles invoices",
+      "relevant": ["email-alpha-budget"],
+      "answer": "ENG-ALPHA"
+    },
+    {
+      "id": "f10",
+      "kind": "fact",
+      "question": "how many backend engineers are we hiring",
+      "relevant": ["doc-hiring-plan"],
+      "answer": "3 backend engineers, starting Q2"
+    },
+    {
+      "id": "f11",
+      "kind": "fact",
+      "question": "pull request approvals required",
+      "relevant": ["doc-onboarding"],
+      "answer": "Two approvals, one from a code owner"
+    },
+    {
+      "id": "f12",
+      "kind": "fact",
+      "question": "vacation carry-over days",
+      "relevant": ["doc-leave-policy"],
+      "answer": "Up to 5 days, expiring March 31"
+    },
+    {
+      "id": "f13",
+      "kind": "fact",
+      "question": "contrast ratio for text colors",
+      "relevant": ["slack-design-palette"],
+      "answer": "4.5:1"
+    },
+    {
+      "id": "f14",
+      "kind": "fact",
+      "question": "production database access approval",
+      "relevant": ["doc-access-reviews"],
+      "answer": "Approval from the CTO; access expires after 7 days"
+    },
+    {
+      "id": "f15",
+      "kind": "fact",
+      "question": "when do new engineers join the on-call rotation",
+      "relevant": ["doc-onboarding"],
+      "answer": "After six weeks"
+    },
+    {
+      "id": "f16",
+      "kind": "fact",
+      "question": "Pro plan annual billing discount",
+      "relevant": ["email-pricing-pro"],
+      "answer": "15%"
+    },
+    {
+      "id": "f17",
+      "kind": "fact",
+      "question": "contingency in the Alpha budget",
+      "relevant": ["email-alpha-budget", "doc-alpha-plan"],
+      "answer": "10% ($7,636), needing Esi's sign-off"
+    },
+    {
+      "id": "f18",
+      "kind": "fact",
+      "question": "root cause of the database outage",
+      "relevant": ["doc-postmortem-2041"],
+      "answer": "Expired backup bucket credentials made WAL archiving fail; WAL files filled the disk"
+    },
+    {
+      "id": "f19",
+      "kind": "fact",
+      "question": "barcode scanning in Beacon",
+      "relevant": ["email-beacon-design-review"],
+      "answer": "Moved to v2"
+    },
+    {
+      "id": "f20",
+      "kind": "fact",
+      "question": "deadline for Harbor's warehouse dataset",
+      "relevant": ["email-alpha-timeline", "doc-alpha-plan"],
+      "answer": "February 20"
+    },
+
+    {
+      "id": "p01",
+      "kind": "paraphrase",
+      "question": "when will the client receive the routing software",
+      "relevant": ["email-alpha-timeline", "email-alpha-change-request", "slack-alpha-confirmed"],
+      "answer": "March 15 (route optimizer); dashboard March 22 in a staged rollout"
+    },
+    {
+      "id": "p02",
+      "kind": "paraphrase",
+      "question": "how much paid time off do employees get",
+      "relevant": ["doc-leave-policy"],
+      "answer": "25 days per year plus public holidays"
+    },
+    {
+      "id": "p03",
+      "kind": "paraphrase",
+      "question": "why couldn't customers create shipments in January",
+      "relevant": ["slack-inc-2041", "doc-postmortem-2041"],
+      "answer": "The primary database stopped accepting writes (INC-2041)"
+    },
+    {
+      "id": "p04",
+      "kind": "paraphrase",
+      "question": "who signed off on the project spending",
+      "relevant": ["email-alpha-budget"],
+      "answer": "Esi Owusu (Finance) approved the $84,000 Alpha budget"
+    },
+    {
+      "id": "p05",
+      "kind": "paraphrase",
+      "question": "is it okay to ship code on a Friday afternoon",
+      "relevant": ["doc-onboarding"],
+      "answer": "No, only hotfixes approved by the on-call lead"
+    },
+    {
+      "id": "p06",
+      "kind": "paraphrase",
+      "question": "what does the driver app do when there is no signal",
+      "relevant": ["doc-beacon-spec"],
+      "answer": "Stores the day's route offline and syncs photos later"
+    },
+    {
+      "id": "p07",
+      "kind": "paraphrase",
+      "question": "what will we pay for storing backups",
+      "relevant": ["email-cloudkeep-contract"],
+      "answer": "$1,200 per month to CloudKeep"
+    },
+    {
+      "id": "p08",
+      "kind": "paraphrase",
+      "question": "can drivers wearing gloves use the app",
+      "relevant": ["email-beacon-design-review"],
+      "answer": "The stop list gets larger tap targets for gloves"
+    },
+    {
+      "id": "p09",
+      "kind": "paraphrase",
+      "question": "do I need two-factor login",
+      "relevant": ["doc-access-reviews"],
+      "answer": "Yes, MFA is required on every company account"
+    },
+    {
+      "id": "p10",
+      "kind": "paraphrase",
+      "question": "where is the new office",
+      "relevant": ["slack-office-move"],
+      "answer": "14 Riverside Walk, 3rd floor"
+    },
+    {
+      "id": "p11",
+      "kind": "paraphrase",
+      "question": "is there car parking at the new place",
+      "relevant": ["slack-office-move"],
+      "answer": "Bike storage yes, car parking no"
+    },
+    {
+      "id": "p12",
+      "kind": "paraphrase",
+      "question": "did the client ask to postpone the delivery",
+      "relevant": ["email-alpha-change-request"],
+      "answer": "Yes, to March 22; Tamarind kept March 15 with a staged rollout"
+    },
+    {
+      "id": "p13",
+      "kind": "paraphrase",
+      "question": "what goals did we set for this quarter",
+      "relevant": ["doc-okrs-q1"],
+      "answer": "Deliver Alpha on time, improve reliability, grow revenue"
+    },
+    {
+      "id": "p14",
+      "kind": "paraphrase",
+      "question": "what happens to someone's accounts when they quit",
+      "relevant": ["doc-access-reviews"],
+      "answer": "All access is removed within 24 hours"
+    },
+    {
+      "id": "p15",
+      "kind": "paraphrase",
+      "question": "who interviews engineering candidates",
+      "relevant": ["doc-hiring-plan"],
+      "answer": "Kofi Boateng leads all engineering interviews"
+    },
+    {
+      "id": "p16",
+      "kind": "paraphrase",
+      "question": "how long is the take-home exercise",
+      "relevant": ["doc-hiring-plan"],
+      "answer": "At most 3 hours"
+    },
+    {
+      "id": "p17",
+      "kind": "paraphrase",
+      "question": "are status colours usable by colour-blind people",
+      "relevant": ["slack-design-palette"],
+      "answer": "Yes, every status also has an icon"
+    },
+    {
+      "id": "p18",
+      "kind": "paraphrase",
+      "question": "did the customer ask for a price reduction",
+      "relevant": ["slack-harbor-renewal"],
+      "answer": "Harbor asked for 10% off; a 3-year term at current price will be offered"
+    },
+    {
+      "id": "p19",
+      "kind": "paraphrase",
+      "question": "how do I get access to the code repositories",
+      "relevant": ["doc-onboarding"],
+      "answer": "Ask Kofi to add you to the GitHub organization"
+    },
+    {
+      "id": "p20",
+      "kind": "paraphrase",
+      "question": "what availability are we aiming for",
+      "relevant": ["doc-okrs-q1"],
+      "answer": "99.9% uptime or better"
+    },
+    {
+      "id": "p21",
+      "kind": "paraphrase",
+      "question": "what will be done to stop the outage happening again",
+      "relevant": ["doc-postmortem-2041"],
+      "answer": "Archiving alerts, automatic credential rotation, disk usage alerts at 80%"
+    },
+    {
+      "id": "p22",
+      "kind": "paraphrase",
+      "question": "what is included in the Alpha delivery",
+      "relevant": ["email-alpha-timeline"],
+      "answer": "Route optimizer, dispatcher dashboard and two days of on-site training"
+    },
+    {
+      "id": "p23",
+      "kind": "paraphrase",
+      "question": "what are Kofi's career ambitions",
+      "relevant": ["email-owner-1on1"],
+      "answer": "Move toward a staff engineer role by year end"
+    },
+    {
+      "id": "p24",
+      "kind": "paraphrase",
+      "question": "do I need a doctor's note when I'm ill",
+      "relevant": ["doc-leave-policy"],
+      "answer": "Yes, for absences longer than three days"
+    },
+
+    {
+      "id": "x01",
+      "kind": "filter",
+      "question": "budget from:esi",
+      "relevant": ["email-alpha-budget"],
+      "answer": "$84,000"
+    },
+    {
+      "id": "x02",
+      "kind": "filter",
+      "question": "delivery in:project-alpha",
+      "relevant": ["slack-alpha-confirmed"],
+      "answer": "March 15"
+    },
+    {
+      "id": "x03",
+      "kind": "filter",
+      "question": "pricing type:email",
+      "relevant": ["email-pricing-pro"],
+      "answer": "$49 per seat per month"
+    },
+
+    {
+      "id": "r01",
+      "kind": "restricted",
+      "question": "Series A fundraising plans",
+      "relevant": [],
+      "forbidden": ["doc-board-update"],
+      "answer": null
+    },
+    {
+      "id": "r02",
+      "kind": "restricted",
+      "question": "how long is our runway",
+      "relevant": [],
+      "forbidden": ["doc-board-update"],
+      "answer": null
+    },
+    {
+      "id": "r03",
+      "kind": "restricted",
+      "question": "compensation increase pool for April",
+      "relevant": [],
+      "forbidden": ["slack-leadership-comp"],
+      "answer": null
+    },
+
+    {
+      "id": "u01",
+      "kind": "unanswerable",
+      "question": "what is the CEO's salary",
+      "relevant": [],
+      "answer": null
+    },
+    {
+      "id": "u02",
+      "kind": "unanswerable",
+      "question": "who won the football match last night",
+      "relevant": [],
+      "answer": null
+    },
+    {
+      "id": "u03",
+      "kind": "unanswerable",
+      "question": "Project Gamma deadline",
+      "relevant": [],
+      "answer": null
+    }
+  ]
+}

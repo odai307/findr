@@ -23,6 +23,10 @@ export interface HybridSearchOptions {
   mode: SearchMode;
   /** Documents to return. */
   limit: number;
+  /** Max wait for the query embedding before falling back to keywords (default 4 s). */
+  embedTimeoutMs?: number;
+  /** How much keyword ranks count relative to meaning ranks in the fusion (default below). */
+  keywordWeight?: number;
 }
 
 export interface HybridSearchResponse {
@@ -35,7 +39,14 @@ export interface HybridSearchResponse {
 
 const CANDIDATES = 50;
 const RRF_K = 60;
-/** A search never waits longer than this for the query's embedding; it falls back to keywords. */
+/**
+ * Weighted RRF: score = w_kw / (k + keyword rank) + 1 / (k + vector rank). Tuned with the
+ * evaluation set (eval/run.ts --sweep): with a real embedding model, keyword matches on common
+ * words add noise, so they count for less than meaning matches. When meaning search is
+ * unavailable (keyword-only), the weight doesn't matter because only one list remains.
+ */
+export const DEFAULT_KEYWORD_WEIGHT = 0.25;
+/** By default a search waits at most this long for the query's embedding, then uses keywords. */
 const QUERY_EMBED_TIMEOUT_MS = 4000;
 
 const textArray = (values: string[]) =>
@@ -74,14 +85,18 @@ const CACHE_TTL_MS = 24 * 3_600_000;
 const CACHE_MAX = 500;
 const queryCache = new Map<string, { vector: number[]; at: number }>();
 
-async function embedQuery(embedder: Embedder, text: string): Promise<number[] | null> {
+async function embedQuery(
+  embedder: Embedder,
+  text: string,
+  timeoutMs: number,
+): Promise<number[] | null> {
   const key = createHash('sha256').update(`${embedder.model}\n${text}`).digest('hex');
   const hit = queryCache.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.vector;
   try {
     const [vector] = await embedder.embed([text], {
       purpose: 'query',
-      signal: AbortSignal.timeout(QUERY_EMBED_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!vector || vector.every((x) => x === 0)) return null;
     if (queryCache.size >= CACHE_MAX) queryCache.delete(queryCache.keys().next().value!);
@@ -121,8 +136,18 @@ export async function hybridSearch(
 
   const wantVector = hasText && opts.mode !== 'keyword';
   const wantKeyword = opts.mode !== 'semantic' || !hasText;
-  const vector = wantVector ? await embedQuery(embedder, opts.text) : null;
+  const vector = wantVector
+    ? await embedQuery(embedder, opts.text, opts.embedTimeoutMs ?? QUERY_EMBED_TIMEOUT_MS)
+    : null;
   const degraded = wantVector && vector === null;
+
+  // Keyword matching: by default ANY of the words may match (chunks matching more of them rank
+  // higher), because natural questions ("INC-2041 duration") rarely contain only words that are
+  // in the document. Explicit search syntax ("exact phrase", -exclude, OR) keeps strict matching.
+  const explicitSyntax = /"|(^|\s)-\S|\sOR\s/.test(opts.text);
+  const tsquery = explicitSyntax
+    ? sql`websearch_to_tsquery('english', ${opts.text})`
+    : sql`replace(plainto_tsquery('english', ${opts.text})::text, ' & ', ' | ')::tsquery`;
 
   // With no words at all (only filters), "keyword" lists the newest matching chunks.
   const kw =
@@ -130,9 +155,9 @@ export async function hybridSearch(
       ? sql`SELECT NULL::uuid AS id, NULL::bigint AS rnk WHERE false`
       : hasText
         ? sql`SELECT id, row_number() OVER (ORDER BY s DESC) AS rnk FROM (
-          SELECT c.id, ts_rank_cd(c.tsv, q) AS s
-          FROM chunks c, websearch_to_tsquery('english', ${opts.text}) q
-          WHERE ${where} AND c.tsv @@ q
+          SELECT c.id, ts_rank_cd(c.tsv, qs.q) AS s
+          FROM chunks c, (SELECT ${tsquery} AS q) qs
+          WHERE ${where} AND c.tsv @@ qs.q
           ORDER BY s DESC LIMIT ${CANDIDATES}) k`
         : sql`SELECT id, row_number() OVER (ORDER BY t DESC NULLS LAST) AS rnk FROM (
           SELECT c.id, c.source_updated_at AS t FROM chunks c
@@ -151,7 +176,8 @@ export async function hybridSearch(
     WITH kw AS (${kw}), vec AS (${vec}),
     fused AS (
       SELECT id,
-             SUM(1.0 / (${RRF_K} + rnk)) AS score,
+             SUM(CASE WHEN src = 'kw' THEN ${opts.keywordWeight ?? DEFAULT_KEYWORD_WEIGHT}::float8 ELSE 1.0 END
+                 / (${RRF_K} + rnk)) AS score,
              MIN(CASE WHEN src = 'kw' THEN rnk END) AS kw_rank,
              MIN(CASE WHEN src = 'vec' THEN rnk END) AS vec_rank
       FROM (SELECT id, rnk, 'kw' AS src FROM kw UNION ALL SELECT id, rnk, 'vec' AS src FROM vec) r

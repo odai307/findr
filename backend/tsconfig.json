@@ -7,5 +7,5 @@
     "rootDir": ".",
     "types": ["node"]
   },
-  "include": ["src", "tests", "scripts", "drizzle.config.ts", "vitest.config.ts"]
+  "include": ["src", "tests", "eval", "scripts", "drizzle.config.ts", "vitest.config.ts"]
 }

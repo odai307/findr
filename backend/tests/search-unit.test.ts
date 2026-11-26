@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { scoreRanking } from '../eval/metrics.js';
 import { mergeFilters, parseQuery } from '../src/search/query-parser.js';
 import {
   diversify,
@@ -130,5 +131,19 @@ describe('ranking', () => {
     ];
     expect(diversify(docs, 4).map((d) => d.documentId)).toEqual(['g1', 'g2', 'g3', 's1']);
     expect(diversify(docs, 2).map((d) => d.documentId)).toEqual(['g1', 's1']);
+  });
+});
+
+describe('eval metrics', () => {
+  it('scores a perfect ranking as 1', () => {
+    expect(scoreRanking(['a', 'b', 'x'], ['a', 'b'])).toEqual({ recall: 1, rr: 1, ndcg: 1 });
+  });
+
+  it('penalises relevant documents found late or not at all', () => {
+    const s = scoreRanking(['x', 'y', 'a'], ['a', 'b']);
+    expect(s.recall).toBe(0.5);
+    expect(s.rr).toBeCloseTo(1 / 3);
+    expect(s.ndcg).toBeCloseTo(0.5 / (1 + 1 / Math.log2(3)));
+    expect(scoreRanking(['x'], ['a'])).toEqual({ recall: 0, rr: 0, ndcg: 0 });
   });
 });

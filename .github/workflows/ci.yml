@@ -38,5 +38,10 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # Search-quality regression guard with the local fake embedder (no API key in CI).
+      # Fails on any permission leak, or if hybrid Recall@10 drops below the floor.
+      - name: Search eval
+        run: pnpm --filter backend eval --fake --min-recall=0.85
+
       - name: Build
         run: pnpm build
