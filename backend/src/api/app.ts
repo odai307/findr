@@ -22,6 +22,7 @@ import { loggerOptions } from '../shared/logger.js';
 import { authPlugin } from './plugins/auth.js';
 import { errorHandler } from './plugins/errors.js';
 import { aiRoutes, feedbackRoutes } from './routes/ai.js';
+import { apiKeyRoutes } from './routes/api-keys.js';
 import { authRoutes } from './routes/auth.js';
 import { connectionRoutes } from './routes/connections.js';
 import { healthRoutes } from './routes/health.js';
@@ -79,7 +80,7 @@ export async function buildApp({ config, db, ...overrides }: AppDeps): Promise<F
   // Lets in-process syncs finish (or stop) before the database closes.
   app.addHook('onClose', () => scheduler.close());
 
-  await app.register(authPlugin, { accessTokens });
+  await app.register(authPlugin, { accessTokens, db });
   await app.register(healthRoutes, { db });
   await app.register(authRoutes, {
     prefix: '/v1/auth',
@@ -114,6 +115,7 @@ export async function buildApp({ config, db, ...overrides }: AppDeps): Promise<F
     userDailyAskLimit: config.USER_DAILY_ASK_LIMIT,
   });
   await app.register(feedbackRoutes, { prefix: '/v1/messages', db });
+  await app.register(apiKeyRoutes, { prefix: '/v1/workspaces/:workspaceId/api-keys', db });
 
   return app;
 }

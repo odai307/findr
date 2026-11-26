@@ -13,7 +13,8 @@ import type { Db } from '../../db/client.js';
 import { conversations, feedback, messages, users } from '../../db/schema.js';
 import { AppError } from '../../shared/errors.js';
 import { getWorkspaceForUser } from '../../workspaces/service.js';
-import { userIdOf } from '../plugins/auth.js';
+import { accessFor, userIdOf } from '../plugins/auth.js';
+import { apiRateLimit } from '../plugins/rate-limits.js';
 
 const citationSchema = z.object({
   n: z.number(),
@@ -52,7 +53,6 @@ interface Options {
 export const aiRoutes: FastifyPluginAsync<Options> = async (fastify, opts) => {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
   const { db } = opts;
-  app.addHook('onRequest', app.authenticate);
 
   /**
    * Streams an answer as server-sent events:
@@ -62,7 +62,8 @@ export const aiRoutes: FastifyPluginAsync<Options> = async (fastify, opts) => {
   app.post(
     '/ask',
     {
-      config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+      onRequest: app.authenticateUserOrKey('ask'),
+      config: { rateLimit: apiRateLimit({ perUser: 20, perKey: 60 }) },
       schema: {
         params: wsParams,
         body: z.object({
@@ -72,9 +73,8 @@ export const aiRoutes: FastifyPluginAsync<Options> = async (fastify, opts) => {
       },
     },
     async (request, reply) => {
-      const userId = userIdOf(request);
       const { workspaceId } = request.params;
-      await getWorkspaceForUser(db, workspaceId, userId);
+      const { userId, principals } = await accessFor(db, request, workspaceId);
       await checkAskBudget(db, workspaceId, userId, opts.userDailyAskLimit);
       const conversation = await openConversation(db, {
         workspaceId,
@@ -111,6 +111,7 @@ export const aiRoutes: FastifyPluginAsync<Options> = async (fastify, opts) => {
             userName: user?.name ?? 'User',
             question: request.body.question,
             conversationId: conversation.id,
+            principals,
           },
           send,
           controller.signal,
@@ -127,6 +128,7 @@ export const aiRoutes: FastifyPluginAsync<Options> = async (fastify, opts) => {
   app.get(
     '/conversations',
     {
+      onRequest: app.authenticate,
       schema: {
         params: wsParams,
         response: { 200: z.object({ data: z.array(conversationSummary) }) },
@@ -173,6 +175,7 @@ export const aiRoutes: FastifyPluginAsync<Options> = async (fastify, opts) => {
   app.get(
     '/conversations/:conversationId',
     {
+      onRequest: app.authenticate,
       schema: {
         params: convParams,
         response: { 200: conversationSummary.extend({ messages: z.array(messageSchema) }) },
@@ -200,7 +203,7 @@ export const aiRoutes: FastifyPluginAsync<Options> = async (fastify, opts) => {
 
   app.delete(
     '/conversations/:conversationId',
-    { schema: { params: convParams } },
+    { onRequest: app.authenticate, schema: { params: convParams } },
     async (request, reply) => {
       const { workspaceId, conversationId } = request.params;
       await ownConversation(workspaceId, conversationId, userIdOf(request));

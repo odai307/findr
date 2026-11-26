@@ -164,6 +164,8 @@ export async function streamAnswer(
     userName: string;
     question: string;
     conversationId: string;
+    /** Who the answer may draw on; defaults to the user's own principals. API keys pass theirs. */
+    principals?: string[];
   },
   emit: (e: AnswerEvent) => void,
   clientSignal: AbortSignal,
@@ -198,7 +200,7 @@ export async function streamAnswer(
   });
 
   // --- Retrieve, with the same permission filtering as search. ---
-  const principals = await principalsFor(db, input.userId, input.workspaceId);
+  const principals = input.principals ?? (await principalsFor(db, input.userId, input.workspaceId));
   const parsed = parseQuery(rewrittenQuery);
   const { chunks } = await hybridSearch(db, deps.embedder, {
     workspaceId: input.workspaceId,

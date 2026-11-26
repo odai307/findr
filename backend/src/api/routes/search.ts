@@ -1,13 +1,13 @@
 import type { FastifyPluginAsync } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { principalsFor } from '../../auth/principals.js';
 import type { Db } from '../../db/client.js';
 import type { Embedder } from '../../ingestion/embedder.js';
 import { hybridSearch } from '../../search/hybrid.js';
 import { mergeFilters, parseDate, parseQuery } from '../../search/query-parser.js';
-import { getWorkspaceForUser } from '../../workspaces/service.js';
-import { userIdOf } from '../plugins/auth.js';
+import { usageEvents } from '../../db/schema.js';
+import { accessFor } from '../plugins/auth.js';
+import { apiRateLimit } from '../plugins/rate-limits.js';
 
 const isoDate = z
   .string()
@@ -52,12 +52,13 @@ export const searchRoutes: FastifyPluginAsync<{ db: Db; embedder: Embedder }> = 
   { db, embedder },
 ) => {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
-  app.addHook('onRequest', app.authenticate);
 
+  /** Signed-in users, or API keys with the `search` scope (shared content only). */
   app.post(
     '/',
     {
-      config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+      onRequest: app.authenticateUserOrKey('search'),
+      config: { rateLimit: apiRateLimit({ perUser: 60, perKey: 120 }) },
       schema: {
         params: z.object({ workspaceId: z.uuid() }),
         body: z.object({
@@ -78,13 +79,11 @@ export const searchRoutes: FastifyPluginAsync<{ db: Db; embedder: Embedder }> = 
     },
     async (request) => {
       const started = performance.now();
-      const userId = userIdOf(request);
       const { workspaceId } = request.params;
-      await getWorkspaceForUser(db, workspaceId, userId);
+      const { userId, principals } = await accessFor(db, request, workspaceId);
 
       const typed = parseQuery(request.body.query);
       const filters = mergeFilters(typed.filters, request.body.filters);
-      const principals = await principalsFor(db, userId, workspaceId);
       const { results, degraded } = await hybridSearch(db, embedder, {
         workspaceId,
         principals,
@@ -93,6 +92,10 @@ export const searchRoutes: FastifyPluginAsync<{ db: Db; embedder: Embedder }> = 
         mode: request.body.mode,
         limit: request.body.limit,
       });
+      // Counted for the usage page (no query text is stored).
+      await db
+        .insert(usageEvents)
+        .values({ workspaceId, userId, kind: 'search', model: embedder.model });
       return {
         data: results,
         degraded,
