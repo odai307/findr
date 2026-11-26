@@ -27,7 +27,7 @@ import { connectionRoutes } from './routes/connections.js';
 import { healthRoutes } from './routes/health.js';
 import { meRoutes } from './routes/me.js';
 import { searchRoutes } from './routes/search.js';
-import { workspaceRoutes } from './routes/workspaces.js';
+import { inviteRoutes, workspaceRoutes } from './routes/workspaces.js';
 
 export interface AppDeps {
   config: Config;
@@ -90,7 +90,12 @@ export async function buildApp({ config, db, ...overrides }: AppDeps): Promise<F
     google,
   });
   await app.register(meRoutes, { prefix: '/v1', db });
-  await app.register(workspaceRoutes, { prefix: '/v1/workspaces', db });
+  await app.register(workspaceRoutes, {
+    prefix: '/v1/workspaces',
+    db,
+    webOrigin: config.WEB_ORIGIN,
+  });
+  await app.register(inviteRoutes, { prefix: '/v1/invites', db });
   await app.register(connectionRoutes, {
     prefix: '/v1/workspaces/:workspaceId/connections',
     db,

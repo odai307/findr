@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import { auditLog, users, type User } from '../db/schema.js';
+import { users, type User } from '../db/schema.js';
 import { createWorkspace } from '../workspaces/service.js';
 import type { GoogleProfile } from './google.js';
 
@@ -59,24 +59,5 @@ export async function upsertDevUser(db: Db, email: string, name?: string): Promi
   return createUserWithWorkspace(db, {
     email: normalized,
     name: name ?? normalized.split('@')[0]!,
-  });
-}
-
-export async function recordAudit(
-  db: Db,
-  entry: {
-    action: string;
-    actorUserId: string | null;
-    ip?: string;
-    userAgent?: string;
-    workspaceId?: string;
-  },
-) {
-  await db.insert(auditLog).values({
-    action: entry.action,
-    actorUserId: entry.actorUserId,
-    workspaceId: entry.workspaceId ?? null,
-    ip: entry.ip ?? null,
-    userAgent: entry.userAgent ?? null,
   });
 }

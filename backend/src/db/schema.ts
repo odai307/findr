@@ -410,7 +410,7 @@ export const usageEvents = pgTable(
       .notNull()
       .references(() => workspaces.id, { onDelete: 'cascade' }),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
-    kind: text('kind', { enum: ['ask', 'rewrite'] }).notNull(),
+    kind: text('kind', { enum: ['ask', 'rewrite', 'search'] }).notNull(),
     model: text('model').notNull(),
     promptTokens: integer('prompt_tokens').notNull().default(0),
     completionTokens: integer('completion_tokens').notNull().default(0),
@@ -418,3 +418,63 @@ export const usageEvents = pgTable(
   },
   (t) => [index('usage_events_ws_idx').on(t.workspaceId, t.createdAt)],
 );
+
+// ---------------------------------------------------------------------------
+// Teams and the public API: invites and API keys
+// ---------------------------------------------------------------------------
+
+/**
+ * A pending invitation to a workspace. The link holds a random token; only its hash is stored.
+ * Single use, expires after 7 days, and only works for the invited email address.
+ */
+export const invites = pgTable(
+  'invites',
+  {
+    id: id(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    email: text('email').notNull(),
+    role: workspaceRole('role').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    invitedBy: uuid('invited_by').references(() => users.id, { onDelete: 'set null' }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('invites_token_key').on(t.tokenHash),
+    index('invites_workspace_idx').on(t.workspaceId),
+  ],
+);
+
+/**
+ * Keys for the public API (search and ask). Shown once at creation; only a hash is stored.
+ * `prefix` is a short, non-secret part shown in the UI so people can tell keys apart.
+ */
+export const apiKeys = pgTable(
+  'api_keys',
+  {
+    id: id(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    prefix: text('prefix').notNull(),
+    keyHash: text('key_hash').notNull(),
+    scopes: text('scopes').array().notNull(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('api_keys_hash_key').on(t.keyHash),
+    index('api_keys_workspace_idx').on(t.workspaceId),
+  ],
+);
+
+export type ApiScope = 'search' | 'ask';
