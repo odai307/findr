@@ -7,11 +7,14 @@ import {
   deleteConnection,
   getConnection,
   listConnections,
+  listSyncRuns,
   resetSyncState,
+  updateConnection,
 } from '../../connections/service.js';
 import type { Db } from '../../db/client.js';
 import type { SyncScheduler } from '../../ingestion/scheduler.js';
 import { userIdOf } from '../plugins/auth.js';
+import { syncRunSchema } from './admin.js';
 
 const runSchema = z
   .object({
@@ -106,6 +109,41 @@ export const connectionRoutes: FastifyPluginAsync<{ db: Db; scheduler: SyncSched
       }
       await scheduler.enqueue(connectionId, request.body.kind);
       return reply.status(202).send({ queued: true });
+    },
+  );
+
+  /** Pause/resume syncing, or switch between personal and shared with the workspace. */
+  app.patch(
+    '/:connectionId',
+    {
+      schema: {
+        params: connParams,
+        body: z
+          .object({
+            paused: z.boolean().optional(),
+            visibility: z.enum(['personal', 'workspace']).optional(),
+          })
+          .refine((b) => b.paused !== undefined || b.visibility !== undefined, 'nothing to change'),
+        response: { 200: connectionSchema },
+      },
+    },
+    async (request) => {
+      const { workspaceId, connectionId } = request.params;
+      return updateConnection(db, workspaceId, connectionId, userIdOf(request), {
+        ...(request.body.paused !== undefined && { paused: request.body.paused }),
+        ...(request.body.visibility && { visibility: request.body.visibility }),
+      });
+    },
+  );
+
+  app.get(
+    '/:connectionId/sync-runs',
+    {
+      schema: { params: connParams, response: { 200: z.object({ data: z.array(syncRunSchema) }) } },
+    },
+    async (request) => {
+      const { workspaceId, connectionId } = request.params;
+      return { data: await listSyncRuns(db, workspaceId, connectionId, userIdOf(request)) };
     },
   );
 

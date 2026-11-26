@@ -183,4 +183,18 @@ export const authRoutes: FastifyPluginAsync<Options> = async (fastify, opts) => 
     clearRefreshCookie(reply);
     return reply.status(204).send();
   });
+
+  /** Signs the user out on every device (all refresh tokens). Access tokens expire within 15 min. */
+  app.post(
+    '/logout-all',
+    { onRequest: app.authenticate, config: authRateLimit },
+    async (request, reply) => {
+      assertSameOrigin(request);
+      const userId = request.auth!.userId;
+      await refreshTokens.revokeAllForUser(userId);
+      await recordAudit(db, { action: 'auth.logout_all', actorUserId: userId, ...client(request) });
+      clearRefreshCookie(reply);
+      return reply.status(204).send();
+    },
+  );
 };

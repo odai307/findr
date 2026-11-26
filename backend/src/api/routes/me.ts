@@ -6,6 +6,7 @@ import type { Db } from '../../db/client.js';
 import { users } from '../../db/schema.js';
 import { AppError } from '../../shared/errors.js';
 import { listWorkspacesForUser } from '../../workspaces/service.js';
+import { recordAudit } from '../../shared/audit.js';
 import { userIdOf } from '../plugins/auth.js';
 import { workspaceSchema } from './workspaces.js';
 
@@ -45,6 +46,21 @@ export const meRoutes: FastifyPluginAsync<{ db: Db }> = async (fastify, { db }) 
         },
         workspaces: await listWorkspacesForUser(db, userId),
       };
+    },
+  );
+
+  /** Account settings: display name. */
+  app.patch(
+    '/me',
+    {
+      onRequest: app.authenticate,
+      schema: { body: z.object({ name: z.string().trim().min(1).max(100) }) },
+    },
+    async (request, reply) => {
+      const userId = userIdOf(request);
+      await db.update(users).set({ name: request.body.name }).where(eq(users.id, userId));
+      await recordAudit(db, { action: 'account.renamed', actorUserId: userId });
+      return reply.status(204).send();
     },
   );
 };

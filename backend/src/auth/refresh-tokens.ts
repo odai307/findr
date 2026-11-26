@@ -25,6 +25,8 @@ export interface RefreshTokenService {
   rotate(token: string, userAgent?: string): Promise<IssuedRefreshToken>;
   /** Logs out: revokes every token from the same login. Unknown tokens are ignored. */
   revokeFamilyOf(token: string): Promise<void>;
+  /** "Sign out everywhere": revokes every active token the user has. */
+  revokeAllForUser(userId: string): Promise<void>;
 }
 
 export function createRefreshTokenService(
@@ -102,6 +104,13 @@ export function createRefreshTokenService(
         .where(eq(refreshTokens.tokenHash, sha256(token)))
         .limit(1);
       if (row) await revokeFamily(row.familyId);
+    },
+
+    async revokeAllForUser(userId) {
+      await db
+        .update(refreshTokens)
+        .set({ revokedAt: now() })
+        .where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt)));
     },
   };
 }

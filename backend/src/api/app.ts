@@ -21,6 +21,7 @@ import type { Config } from '../shared/config.js';
 import { loggerOptions } from '../shared/logger.js';
 import { authPlugin } from './plugins/auth.js';
 import { errorHandler } from './plugins/errors.js';
+import { adminRoutes } from './routes/admin.js';
 import { aiRoutes, feedbackRoutes } from './routes/ai.js';
 import { apiKeyRoutes } from './routes/api-keys.js';
 import { authRoutes } from './routes/auth.js';
@@ -116,6 +117,7 @@ export async function buildApp({ config, db, ...overrides }: AppDeps): Promise<F
   });
   await app.register(feedbackRoutes, { prefix: '/v1/messages', db });
   await app.register(apiKeyRoutes, { prefix: '/v1/workspaces/:workspaceId/api-keys', db });
+  await app.register(adminRoutes, { prefix: '/v1/workspaces/:workspaceId', db });
 
   return app;
 }
