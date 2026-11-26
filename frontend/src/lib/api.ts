@@ -233,3 +233,85 @@ export interface ChatMessage {
 export interface Conversation extends ConversationSummary {
   messages: ChatMessage[];
 }
+
+export type Role = 'owner' | 'admin' | 'member';
+
+export interface Member {
+  userId: string;
+  name: string;
+  email: string;
+  avatarUrl: string | null;
+  role: Role;
+  joinedAt: string;
+}
+
+export interface Invite {
+  id: string;
+  email: string;
+  role: Role;
+  expiresAt: string;
+  createdAt: string;
+}
+
+export interface InvitePreview {
+  workspaceName: string;
+  role: Role;
+  email: string;
+  invitedBy: string | null;
+  expiresAt: string;
+}
+
+export type ApiScope = 'search' | 'ask';
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  prefix: string;
+  scopes: ApiScope[];
+  createdByName: string | null;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+export interface Usage {
+  days: number;
+  daily: { day: string; searches: number; asks: number; tokens: number }[];
+  totals: { searches: number; asks: number; tokens: number };
+  models: {
+    model: string;
+    kind: string;
+    calls: number;
+    promptTokens: number;
+    completionTokens: number;
+  }[];
+  feedback: { up: number; down: number };
+}
+
+export interface SyncRunRow extends SyncRun {
+  id: string;
+  connectionId: string;
+  connectionName?: string;
+  provider?: string;
+}
+
+export interface AuditEntry {
+  id: string;
+  action: string;
+  targetType: string | null;
+  targetId: string | null;
+  ip: string | null;
+  createdAt: string;
+  actorName: string | null;
+  actorEmail: string | null;
+}
+
+export const isAdmin = (role: Role) => role === 'owner' || role === 'admin';
+
+export const providerLabel: Record<string, string> = {
+  demo: 'Demo',
+  gmail: 'Gmail',
+  gdrive: 'Google Drive',
+  slack: 'Slack',
+  notion: 'Notion',
+  github: 'GitHub',
+};

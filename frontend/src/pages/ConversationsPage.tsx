@@ -1,11 +1,42 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { MessageSquare, Plus, Send, Sparkles, Square, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { Feedback } from '../components/AnswerPanel';
 import { AnswerText } from '../components/AnswerText';
 import { api, type Conversation, type ConversationSummary } from '../lib/api';
+import { cn } from '../lib/cn';
 import { useAskStream } from '../lib/useAskStream';
 import { useWorkspace } from '../lib/workspace';
+import { Button, buttonClass } from '../ui/Button';
+import { useConfirm } from '../ui/Dialog';
+import { ErrorNote } from '../ui/Surface';
+import { useToast } from '../ui/Toast';
+
+function AnswerCard({ children, live }: { children: React.ReactNode; live?: boolean }) {
+  return (
+    <div
+      className={cn(
+        'rounded-lg border bg-surface p-4 text-sm',
+        live ? 'border-accent/30' : 'border-line',
+      )}
+    >
+      <span className="mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-accent uppercase">
+        <Sparkles className="size-3.5" aria-hidden />
+        Findr
+      </span>
+      {children}
+    </div>
+  );
+}
+
+function Question({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="max-w-[85%] self-end rounded-lg bg-accent px-4 py-2 text-sm text-accent-fg">
+      {children}
+    </div>
+  );
+}
 
 /** Threaded Q&A: a sidebar of past conversations and the selected (or a new) conversation. */
 export function ConversationsPage() {
@@ -13,6 +44,8 @@ export function ConversationsPage() {
   const { workspace } = useWorkspace();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
+  const toast = useToast();
   const base = `/v1/workspaces/${workspace.id}/conversations`;
   const [input, setInput] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -33,9 +66,8 @@ export function ConversationsPage() {
       void queryClient
         .invalidateQueries({ queryKey: ['conversation', workspace.id, finished.conversationId] })
         .then(() => helpers.reset());
-      if (finished.conversationId !== conversationId) {
+      if (finished.conversationId !== conversationId)
         navigate(`/conversations/${finished.conversationId}`);
-      }
     }
   });
 
@@ -43,6 +75,7 @@ export function ConversationsPage() {
     mutationFn: (id: string) => api(`${base}/${id}`, { method: 'DELETE' }),
     onSuccess: (_d, id) => {
       void queryClient.invalidateQueries({ queryKey: ['conversations', workspace.id] });
+      toast('Conversation deleted');
       if (id === conversationId) navigate('/conversations');
     },
   });
@@ -61,146 +94,149 @@ export function ConversationsPage() {
 
   const messages = conversationId ? (conversation.data?.messages ?? []) : [];
   const streaming = state.status === 'streaming';
+  const empty = !conversationId && state.status === 'idle';
 
   return (
-    <div className="grid gap-6 md:grid-cols-[14rem_1fr]">
+    <div className="grid gap-6 lg:grid-cols-[15rem_1fr]">
       <aside aria-label="Conversations" className="flex flex-col gap-2">
         <Link
           to="/conversations"
           onClick={() => reset()}
-          className="rounded-md border border-zinc-300 px-3 py-2 text-center text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          className={buttonClass('secondary', 'md', 'w-full')}
         >
-          + New conversation
+          <Plus className="size-4" aria-hidden /> New conversation
         </Link>
-        <ul className="flex flex-col gap-1 text-sm">
+        <ul className="flex max-h-[40vh] flex-col gap-0.5 overflow-y-auto text-sm lg:max-h-none">
           {list.data?.data.map((c) => (
             <li key={c.id} className="group flex items-center gap-1">
               <Link
                 to={`/conversations/${c.id}`}
-                className={`min-w-0 flex-1 truncate rounded px-2 py-1.5 ${
-                  c.id === conversationId
-                    ? 'bg-zinc-200 dark:bg-zinc-800'
-                    : 'hover:bg-zinc-100 dark:hover:bg-zinc-900'
-                }`}
                 title={c.title}
+                className={cn(
+                  'min-w-0 flex-1 truncate rounded-md px-2.5 py-1.5',
+                  c.id === conversationId
+                    ? 'bg-surface-2 font-medium text-fg'
+                    : 'text-muted hover:bg-surface-2 hover:text-fg',
+                )}
               >
                 {c.title}
               </Link>
               <button
                 type="button"
                 aria-label={`Delete conversation: ${c.title}`}
-                onClick={() => {
-                  if (confirm('Delete this conversation?')) remove.mutate(c.id);
+                onClick={async () => {
+                  if (
+                    await confirm({
+                      title: 'Delete this conversation?',
+                      description: c.title,
+                      confirmLabel: 'Delete',
+                      danger: true,
+                    })
+                  ) {
+                    remove.mutate(c.id);
+                  }
                 }}
-                className="rounded px-1 text-zinc-400 opacity-0 hover:text-red-600 focus:opacity-100 group-hover:opacity-100"
+                className="rounded p-1 text-muted opacity-0 group-hover:opacity-100 hover:text-danger focus:opacity-100"
               >
-                ✕
+                <Trash2 className="size-3.5" />
               </button>
             </li>
           ))}
           {list.data?.data.length === 0 && (
-            <li className="px-2 text-zinc-500">No conversations yet.</li>
+            <li className="px-2.5 py-1.5 text-muted">No conversations yet.</li>
           )}
         </ul>
       </aside>
 
-      <section className="flex min-h-[60vh] flex-col">
-        <div className="flex flex-1 flex-col gap-5">
-          {!conversationId && !streaming && state.status === 'idle' && (
-            <p className="text-sm text-zinc-500">
-              Ask a question about your connected apps. Follow-up questions keep the context.
-            </p>
+      <section className="flex min-h-[70vh] min-w-0 flex-col">
+        <div className="flex flex-1 flex-col gap-4">
+          {empty && (
+            <div className="flex flex-1 flex-col items-center justify-center py-10 text-center">
+              <span className="mb-3 flex size-12 items-center justify-center rounded-full bg-accent-soft text-accent">
+                <MessageSquare className="size-6" aria-hidden />
+              </span>
+              <h1 className="text-lg font-semibold">Ask about your work</h1>
+              <p className="mt-1 max-w-sm text-sm text-muted">
+                Answers come from your connected apps, with sources. Follow-up questions keep the
+                context.
+              </p>
+            </div>
           )}
-          {conversation.isError && <p className="text-sm text-red-600">Conversation not found.</p>}
+          {conversation.isError && <ErrorNote>Conversation not found.</ErrorNote>}
 
           {messages.map((m) =>
             m.role === 'user' ? (
-              <div
-                key={m.id}
-                className="self-end rounded-lg bg-zinc-900 px-4 py-2 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900"
-              >
-                {m.content}
-              </div>
+              <Question key={m.id}>{m.content}</Question>
             ) : (
-              <div
-                key={m.id}
-                className="rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900"
-              >
+              <AnswerCard key={m.id}>
                 {m.rewrittenQuery && (
-                  <p className="mb-2 text-xs text-zinc-500">Searched for: “{m.rewrittenQuery}”</p>
+                  <p className="mb-2 text-xs text-muted">Searched for: “{m.rewrittenQuery}”</p>
                 )}
                 {m.status === 'error' && !m.content ? (
-                  <p className="text-amber-700 dark:text-amber-400">
-                    The AI answer was unavailable.
-                  </p>
+                  <p className="text-warning">The AI answer was unavailable.</p>
                 ) : (
                   <AnswerText text={m.content} citations={m.citations} />
                 )}
                 {m.status === 'complete' && (
-                  <div className="mt-3 border-t border-zinc-100 pt-2 dark:border-zinc-800">
+                  <div className="mt-3 border-t border-line pt-2">
                     <Feedback messageId={m.id} />
                   </div>
                 )}
-              </div>
+              </AnswerCard>
             ),
           )}
 
           {state.status !== 'idle' && (
             <>
-              <div className="self-end rounded-lg bg-zinc-900 px-4 py-2 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900">
-                {state.question}
-              </div>
-              <div
-                aria-live="polite"
-                aria-busy={streaming}
-                className="rounded-lg border border-blue-200 bg-blue-50/50 p-4 text-sm dark:border-blue-900 dark:bg-blue-950/30"
-              >
-                {state.rewrittenQuery && (
-                  <p className="mb-2 text-xs text-zinc-500">
-                    Searched for: “{state.rewrittenQuery}”
-                  </p>
-                )}
-                {state.text ? (
-                  <AnswerText text={state.text} citations={state.citations} streaming={streaming} />
-                ) : (
-                  streaming && <p className="text-zinc-500">Reading your sources…</p>
-                )}
-                {state.error && (
-                  <p className="mt-2 text-amber-700 dark:text-amber-400">{state.error}</p>
-                )}
-              </div>
+              <Question>{state.question}</Question>
+              <AnswerCard live>
+                <div aria-live="polite" aria-busy={streaming}>
+                  {state.rewrittenQuery && (
+                    <p className="mb-2 text-xs text-muted">
+                      Searched for: “{state.rewrittenQuery}”
+                    </p>
+                  )}
+                  {state.text ? (
+                    <AnswerText
+                      text={state.text}
+                      citations={state.citations}
+                      streaming={streaming}
+                    />
+                  ) : (
+                    streaming && <p className="text-muted">Reading your sources…</p>
+                  )}
+                  {state.error && <p className="mt-2 text-warning">{state.error}</p>}
+                </div>
+              </AnswerCard>
             </>
           )}
           <div ref={bottomRef} />
         </div>
 
-        <form
-          onSubmit={onSubmit}
-          className="sticky bottom-0 mt-6 flex gap-2 bg-zinc-50 py-3 dark:bg-zinc-950"
-        >
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={conversationId ? 'Ask a follow-up…' : 'Ask a question…'}
-            aria-label="Question"
-            className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-4 py-2.5 dark:border-zinc-700 dark:bg-zinc-900"
-          />
-          {streaming ? (
-            <button
-              type="button"
-              onClick={cancel}
-              className="rounded-md border border-zinc-300 px-4 py-2.5 text-sm dark:border-zinc-700"
-            >
-              Stop
-            </button>
-          ) : (
-            <button
-              type="submit"
-              className="rounded-md bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white dark:bg-white dark:text-zinc-900"
-            >
-              Ask
-            </button>
-          )}
+        <form onSubmit={onSubmit} className="sticky bottom-0 mt-6 bg-bg pt-2 pb-3">
+          <div className="flex items-center gap-2 rounded-lg border border-line bg-surface p-1.5 pl-3 shadow-sm focus-within:border-accent focus-within:ring-2 focus-within:ring-ring/25">
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={conversationId ? 'Ask a follow-up…' : 'Ask a question…'}
+              aria-label="Question"
+              className="h-9 min-w-0 flex-1 bg-transparent text-sm focus:outline-none"
+            />
+            {streaming ? (
+              <Button icon={<Square className="size-3" />} onClick={cancel}>
+                Stop
+              </Button>
+            ) : (
+              <Button
+                type="submit"
+                variant="primary"
+                icon={<Send className="size-4" />}
+                disabled={!input.trim()}
+              >
+                Ask
+              </Button>
+            )}
+          </div>
         </form>
       </section>
     </div>

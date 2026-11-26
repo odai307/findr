@@ -1,24 +1,160 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, ApiError, type Connection } from '../lib/api';
+import {
+  Database,
+  FileText,
+  GitBranch,
+  History,
+  Loader2,
+  Mail,
+  MessageSquare,
+  NotebookPen,
+  Pause,
+  Play,
+  RefreshCw,
+  Trash2,
+  Users,
+} from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import {
+  api,
+  ApiError,
+  isAdmin,
+  providerLabel,
+  type Connection,
+  type SyncRunRow,
+} from '../lib/api';
 import { useWorkspace } from '../lib/workspace';
+import { Button } from '../ui/Button';
+import { Dialog, useConfirm } from '../ui/Dialog';
+import { Badge, Card, ErrorNote, PageHeader, Spinner, Table, td, th } from '../ui/Surface';
+import { useToast } from '../ui/Toast';
 
-const statusStyles: Record<Connection['status'], string> = {
-  active: 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300',
-  syncing: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300',
-  paused: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300',
-  error: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
-  revoked: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
-};
+const statusTone = {
+  active: 'success',
+  syncing: 'accent',
+  paused: 'neutral',
+  error: 'danger',
+  revoked: 'warning',
+} as const;
+
+const comingSoon: { name: string; icon: ReactNode; phase: string; text: string }[] = [
+  {
+    name: 'Google Drive',
+    icon: <FileText className="size-5" />,
+    phase: 'Next',
+    text: 'Docs, Sheets, Slides and PDFs, with Drive sharing permissions.',
+  },
+  {
+    name: 'Slack',
+    icon: <MessageSquare className="size-5" />,
+    phase: 'Later',
+    text: 'Channels and threads; private channels only for their members.',
+  },
+  {
+    name: 'Gmail',
+    icon: <Mail className="size-5" />,
+    phase: 'Later',
+    text: 'Your mail, visible only to you.',
+  },
+  {
+    name: 'Notion',
+    icon: <NotebookPen className="size-5" />,
+    phase: 'Later',
+    text: 'Pages and databases.',
+  },
+  {
+    name: 'GitHub',
+    icon: <GitBranch className="size-5" />,
+    phase: 'Later',
+    text: 'Issues, pull requests and READMEs.',
+  },
+];
 
 function when(iso: string | null) {
   return iso ? new Date(iso).toLocaleString() : 'never';
 }
 
-export function ConnectionsPage() {
+function SyncHistory({
+  connection,
+  onClose,
+}: {
+  connection: Connection | null;
+  onClose: () => void;
+}) {
   const { workspace } = useWorkspace();
+  const runs = useQuery({
+    queryKey: ['sync-runs', connection?.id],
+    enabled: Boolean(connection),
+    queryFn: () =>
+      api<{ data: SyncRunRow[] }>(
+        `/v1/workspaces/${workspace.id}/connections/${connection!.id}/sync-runs`,
+      ),
+  });
+  return (
+    <Dialog
+      open={connection !== null}
+      onClose={onClose}
+      title="Sync history"
+      description={connection?.displayName}
+      wide
+    >
+      {runs.isLoading && <Spinner />}
+      {runs.data && (
+        <div className="-mx-5 mb-5 max-h-96 overflow-y-auto">
+          <Table>
+            <thead>
+              <tr>
+                <th className={th}>Started</th>
+                <th className={th}>Kind</th>
+                <th className={th}>Result</th>
+                <th className={th}>Items</th>
+                <th className={th}>Chunks embedded / reused</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runs.data.data.map((r) => (
+                <tr key={r.id}>
+                  <td className={td}>{new Date(r.startedAt).toLocaleString()}</td>
+                  <td className={td}>{r.kind}</td>
+                  <td className={td}>
+                    <Badge
+                      tone={
+                        r.status === 'succeeded'
+                          ? 'success'
+                          : r.status === 'failed'
+                            ? 'danger'
+                            : 'accent'
+                      }
+                    >
+                      {r.status}
+                    </Badge>
+                    {r.error && <p className="mt-1 max-w-xs text-xs text-danger">{r.error}</p>}
+                  </td>
+                  <td className={td}>
+                    {r.itemsUpserted} new · {r.itemsUnchanged} same · {r.itemsDeleted} deleted
+                  </td>
+                  <td className={td}>
+                    {r.chunksEmbedded} / {r.chunksReused}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </div>
+      )}
+    </Dialog>
+  );
+}
+
+export function ConnectionsPage() {
+  const { workspace, me } = useWorkspace();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
+  const toast = useToast();
+  const [history, setHistory] = useState<Connection | null>(null);
   const base = `/v1/workspaces/${workspace.id}/connections`;
   const key = ['connections', workspace.id];
+  const admin = isAdmin(workspace.role);
 
   const connections = useQuery({
     queryKey: key,
@@ -32,132 +168,229 @@ export function ConnectionsPage() {
         : false,
   });
   const refresh = () => queryClient.invalidateQueries({ queryKey: key });
+  const onError = (err: unknown) =>
+    toast(err instanceof ApiError ? err.message : 'Something went wrong.', 'error');
 
   const addDemo = useMutation({
     mutationFn: () => api<Connection>(`${base}/demo`, { method: 'POST' }),
+    onSuccess: () => toast('Demo data added; indexing started'),
+    onError,
     onSettled: refresh,
   });
   const sync = useMutation({
     mutationFn: (v: { id: string; kind: 'incremental' | 'full' }) =>
       api(`${base}/${v.id}/sync`, { method: 'POST', body: JSON.stringify({ kind: v.kind }) }),
+    onSuccess: () => toast('Sync started'),
+    onError,
+    onSettled: refresh,
+  });
+  const update = useMutation({
+    mutationFn: (v: {
+      id: string;
+      body: { paused?: boolean; visibility?: 'personal' | 'workspace' };
+    }) => api<Connection>(`${base}/${v.id}`, { method: 'PATCH', body: JSON.stringify(v.body) }),
+    onError,
     onSettled: refresh,
   });
   const remove = useMutation({
     mutationFn: (id: string) => api(`${base}/${id}`, { method: 'DELETE' }),
+    onSuccess: () => toast('Disconnected'),
+    onError,
     onSettled: refresh,
   });
 
   const list = connections.data?.data ?? [];
   const hasDemo = list.some((c) => c.provider === 'demo');
-  const error = [addDemo.error, sync.error, remove.error].find(Boolean);
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Connections</h1>
-        {!hasDemo && connections.isSuccess && (
-          <button
-            onClick={() => addDemo.mutate()}
-            disabled={addDemo.isPending}
-            className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-white dark:text-zinc-900"
-          >
-            Add demo data
-          </button>
-        )}
+      <PageHeader
+        title="Connections"
+        description="The apps Findr searches. Each person only sees what they can see in the original app."
+      />
+
+      {connections.isLoading && <Spinner />}
+      {connections.isError && <ErrorNote>Couldn't load connections.</ErrorNote>}
+
+      <div className="flex flex-col gap-3">
+        {list.map((c) => {
+          const canManage = c.isOwner || admin;
+          const busy = c.status === 'syncing' || c.lastRun?.status === 'running' || !c.lastRun;
+          return (
+            <Card key={c.id} className="p-5">
+              <div className="flex flex-wrap items-start gap-4">
+                <span
+                  className="flex size-10 items-center justify-center rounded-md bg-accent-soft text-accent"
+                  aria-hidden
+                >
+                  <Database className="size-5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="font-medium">{c.displayName}</h2>
+                    <Badge tone={statusTone[c.status]}>
+                      {busy && c.status !== 'paused' && (
+                        <Loader2 className="size-3 animate-spin" aria-hidden />
+                      )}
+                      {c.status}
+                    </Badge>
+                    <Badge>
+                      {c.visibility === 'workspace' ? (
+                        <Users className="size-3" aria-hidden />
+                      ) : null}
+                      {c.visibility === 'workspace' ? 'Shared with workspace' : 'Personal'}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-sm text-muted">
+                    {providerLabel[c.provider] ?? c.provider} · {c.documentCount} documents ·{' '}
+                    {c.chunkCount} chunks · last sync{' '}
+                    {when(c.lastIncrementalSyncAt ?? c.lastFullSyncAt)}
+                  </p>
+                  {c.lastRun && (
+                    <p className="mt-1 text-xs text-muted">
+                      Last run ({c.lastRun.kind}, {c.lastRun.status}): {c.lastRun.itemsUpserted}{' '}
+                      indexed, {c.lastRun.itemsUnchanged} unchanged, {c.lastRun.itemsDeleted}{' '}
+                      deleted · {c.lastRun.chunksEmbedded} chunks embedded, {c.lastRun.chunksReused}{' '}
+                      reused
+                    </p>
+                  )}
+                  {c.status === 'error' && c.errorMessage && (
+                    <p className="mt-2 text-sm text-danger">{c.errorMessage}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                {canManage && (
+                  <>
+                    <Button
+                      size="sm"
+                      icon={<RefreshCw className="size-3.5" />}
+                      disabled={busy || c.status === 'paused'}
+                      onClick={() => sync.mutate({ id: c.id, kind: 'incremental' })}
+                    >
+                      Sync now
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={busy || c.status === 'paused'}
+                      onClick={() => sync.mutate({ id: c.id, kind: 'full' })}
+                    >
+                      Full resync
+                    </Button>
+                    <Button
+                      size="sm"
+                      icon={
+                        c.status === 'paused' ? (
+                          <Play className="size-3.5" />
+                        ) : (
+                          <Pause className="size-3.5" />
+                        )
+                      }
+                      onClick={() =>
+                        update.mutate({ id: c.id, body: { paused: c.status !== 'paused' } })
+                      }
+                    >
+                      {c.status === 'paused' ? 'Resume' : 'Pause'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        update.mutate({
+                          id: c.id,
+                          body: {
+                            visibility: c.visibility === 'workspace' ? 'personal' : 'workspace',
+                          },
+                        })
+                      }
+                    >
+                      {c.visibility === 'workspace' ? 'Make personal' : 'Share with workspace'}
+                    </Button>
+                  </>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={<History className="size-3.5" />}
+                  onClick={() => setHistory(c)}
+                >
+                  History
+                </Button>
+                {canManage && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-danger hover:text-danger"
+                    icon={<Trash2 className="size-3.5" />}
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: `Disconnect ${c.displayName}?`,
+                        description:
+                          'Everything indexed from it is deleted from Findr. The original app is not affected.',
+                        confirmLabel: 'Disconnect',
+                        danger: true,
+                      });
+                      if (ok) remove.mutate(c.id);
+                    }}
+                  >
+                    Disconnect
+                  </Button>
+                )}
+              </div>
+            </Card>
+          );
+        })}
       </div>
-      <p className="mt-1 text-sm text-zinc-500">
-        Google Drive, Slack and Gmail arrive in later phases. The demo data is a fictional company,
-        Tamarind Labs.
-      </p>
 
-      {error && (
-        <p className="mt-4 text-sm text-red-600">
-          {error instanceof ApiError ? error.message : 'Something went wrong.'}
-        </p>
-      )}
-      {connections.isLoading && <p className="mt-6 text-sm text-zinc-500">Loading…</p>}
-      {connections.isSuccess && list.length === 0 && (
-        <p className="mt-6 text-sm text-zinc-500">No connections yet.</p>
-      )}
-
-      <ul className="mt-6 flex flex-col gap-4">
-        {list.map((c) => (
-          <li
-            key={c.id}
-            className="rounded-md border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+      <h2 className="mt-10 mb-3 text-sm font-semibold">Add a connection</h2>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <Card className="flex flex-col p-4">
+          <div className="flex items-center gap-3">
+            <span
+              className="flex size-9 items-center justify-center rounded-md bg-accent-soft text-accent"
+              aria-hidden
+            >
+              <Database className="size-5" />
+            </span>
+            <span className="font-medium">Demo data</span>
+          </div>
+          <p className="mt-2 flex-1 text-sm text-muted">
+            A fictional company, Tamarind Labs: 82 emails, docs and Slack threads. Shared with the
+            workspace.
+          </p>
+          <Button
+            className="mt-4"
+            variant="primary"
+            size="sm"
+            loading={addDemo.isPending}
+            disabled={hasDemo}
+            onClick={() => addDemo.mutate()}
           >
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium">{c.displayName}</span>
+            {hasDemo ? 'Connected' : 'Connect'}
+          </Button>
+        </Card>
+        {comingSoon.map((s) => (
+          <Card key={s.name} className="flex flex-col p-4 opacity-75">
+            <div className="flex items-center gap-3">
               <span
-                className={`rounded px-1.5 py-0.5 text-xs font-medium ${statusStyles[c.status]}`}
+                className="flex size-9 items-center justify-center rounded-md bg-surface-2 text-muted"
+                aria-hidden
               >
-                {c.status}
+                {s.icon}
               </span>
-              <span className="text-xs text-zinc-500">
-                {c.visibility === 'workspace' ? 'shared with workspace' : 'personal'}
-              </span>
+              <span className="font-medium">{s.name}</span>
+              <Badge>{s.phase === 'Next' ? 'Coming next' : 'Coming later'}</Badge>
             </div>
-
-            <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-4">
-              <div>
-                <dt className="text-xs text-zinc-500">Documents</dt>
-                <dd>{c.documentCount}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-zinc-500">Chunks</dt>
-                <dd>{c.chunkCount}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-zinc-500">Last full sync</dt>
-                <dd>{when(c.lastFullSyncAt)}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-zinc-500">Last incremental</dt>
-                <dd>{when(c.lastIncrementalSyncAt)}</dd>
-              </div>
-            </dl>
-
-            {c.lastRun && (
-              <p className="mt-3 text-xs text-zinc-500">
-                Last run ({c.lastRun.kind}, {c.lastRun.status}): {c.lastRun.itemsSeen} items seen,{' '}
-                {c.lastRun.itemsUpserted} indexed, {c.lastRun.itemsUnchanged} unchanged,{' '}
-                {c.lastRun.itemsDeleted} deleted · {c.lastRun.chunksEmbedded} chunks embedded,{' '}
-                {c.lastRun.chunksReused} reused
-              </p>
-            )}
-            {c.errorMessage && c.status === 'error' && (
-              <p className="mt-2 text-sm text-red-600">{c.errorMessage}</p>
-            )}
-
-            <div className="mt-4 flex flex-wrap gap-2 text-sm">
-              <button
-                onClick={() => sync.mutate({ id: c.id, kind: 'incremental' })}
-                disabled={c.status === 'syncing'}
-                className="rounded-md border border-zinc-300 px-3 py-1 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-              >
-                Sync now
-              </button>
-              <button
-                onClick={() => sync.mutate({ id: c.id, kind: 'full' })}
-                disabled={c.status === 'syncing'}
-                className="rounded-md border border-zinc-300 px-3 py-1 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-              >
-                Full resync
-              </button>
-              <button
-                onClick={() => {
-                  if (confirm(`Disconnect ${c.displayName}? All of its indexed data is deleted.`)) {
-                    remove.mutate(c.id);
-                  }
-                }}
-                className="rounded-md border border-red-300 px-3 py-1 text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
-              >
-                Disconnect
-              </button>
-            </div>
-          </li>
+            <p className="mt-2 flex-1 text-sm text-muted">{s.text}</p>
+            <Button className="mt-4" size="sm" disabled>
+              Not available yet
+            </Button>
+          </Card>
         ))}
-      </ul>
+      </div>
+      <p className="mt-4 text-xs text-muted">Signed in as {me.user.email}.</p>
+
+      <SyncHistory connection={history} onClose={() => setHistory(null)} />
     </div>
   );
 }

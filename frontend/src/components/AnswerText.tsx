@@ -36,7 +36,7 @@ export function AnswerText({
           if (c) return <CitationChip key={k} citation={c} />;
           // Numbers are only known once the answer is complete.
           return streaming ? (
-            <sup key={k} className="text-xs text-zinc-400">
+            <sup key={k} className="text-xs text-muted">
               {part}
             </sup>
           ) : null;
@@ -87,7 +87,7 @@ export function AnswerText({
           </p>
         );
       })}
-      {streaming && <span className="inline-block h-4 w-2 animate-pulse bg-zinc-400" aria-hidden />}
+      {streaming && <span className="inline-block h-4 w-2 animate-pulse bg-muted" aria-hidden />}
     </div>
   );
 }

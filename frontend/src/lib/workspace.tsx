@@ -25,14 +25,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const me = useQuery({ queryKey: ['me'], queryFn: () => api<Me>('/v1/me') });
   const [selected, setSelected] = useState<string | null>(readStored);
 
-  if (me.isLoading) return <div className="p-8 text-sm text-zinc-500">Loading…</div>;
+  if (me.isLoading)
+    return (
+      <div className="flex min-h-screen items-center justify-center text-sm text-muted">
+        Loading…
+      </div>
+    );
   if (me.isError || !me.data) {
-    return <div className="p-8 text-sm text-red-600">Couldn't load your account.</div>;
+    return <div className="p-8 text-sm text-danger">Couldn't load your account.</div>;
   }
 
   const workspaces = me.data.workspaces;
   const workspace = workspaces.find((w) => w.id === selected) ?? workspaces[0];
-  if (!workspace) return <div className="p-8 text-sm text-zinc-500">You have no workspaces.</div>;
+  if (!workspace) return <div className="p-8 text-sm text-muted">You have no workspaces.</div>;
 
   const setWorkspaceId = (id: string) => {
     setSelected(id);

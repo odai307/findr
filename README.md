@@ -2,7 +2,7 @@
 
 Search across your work apps (Google Drive, Slack, Gmail, …) from one search bar, and ask questions that are answered with citations back to the original sources. Each user only sees content they can already see in the source app.
 
-Design docs live in [architecture/](architecture/). Current status: **the core works end to end on demo data**: ingestion, hybrid search with filters, a search-quality evaluation, and streamed AI answers with citations. Real connectors (Drive, Slack, Gmail) come next.
+Design docs live in [architecture/](architecture/). Current status: **the whole app works end to end on demo data**: ingestion, hybrid search with filters, a search-quality evaluation, streamed AI answers with citations, teams (members, roles, invites), API keys, usage and admin pages. Real connectors (Drive, Slack, Gmail) come next.
 
 ## What it does
 
@@ -10,6 +10,27 @@ Design docs live in [architecture/](architecture/). Current status: **the core w
 - **AI answers with citations**: ask a question, get an answer streamed word by word with `[1]` `[2]` markers that link to the sources. Follow-up questions keep the context (they're rewritten into standalone searches). If the sources don't say, it says it couldn't find it.
 - **Permissions everywhere**: every search and every answer is filtered by the user's access inside SQL, before ranking. Restricted demo documents never appear, in any mode.
 - **Safe answers**: answers are rendered as text with a tiny Markdown subset: no images, and links only to cited sources, so an injected instruction in a document can't exfiltrate data.
+- **Teams**: owners, admins and members; invites by one-time link (hashed, single use, 7-day expiry, bound to the invitee's email); removing someone cuts access immediately.
+- **Public API**: API keys (shown once, stored hashed) for search and ask; key requests only see content shared with the whole workspace.
+- **Admin**: usage per day (searches, questions, AI tokens, answer ratings), sync health, and an audit log.
+
+## Pages
+
+| Page                 | What's there                                                                                              |
+| -------------------- | --------------------------------------------------------------------------------------------------------- |
+| Sign in              | Google or dev sign-in; returns you to where you were going (e.g. an invite)                               |
+| Welcome              | First run: name the workspace, add the demo data, watch it index, ask a first question                    |
+| Search               | One box for asking and searching; streamed answer with citation cards; filter chips; highlighted results  |
+| Ask                  | Conversations with follow-ups; history sidebar; thumbs up/down                                            |
+| Connections          | Status and counts per app, sync / full resync / pause / share or make personal / disconnect, sync history |
+| Settings → Workspace | Rename; leave; delete (owners)                                                                            |
+| Settings → Members   | Members and roles; invite by link; pending invites                                                        |
+| Settings → API keys  | Create (shown once), scopes, last used, revoke; curl example (admins)                                     |
+| Settings → Usage     | Totals and daily charts; tokens per model (admins)                                                        |
+| Admin                | Sync runs (failed highlighted) and the audit log (admins)                                                 |
+| Account              | Name, theme (light / dark / system), sign out of all devices                                              |
+
+The UI has a sidebar on desktop and a slide-over menu on phones, light and dark themes, keyboard shortcuts (<kbd>Ctrl</kbd>+<kbd>K</kbd> to search) and confirm dialogs for destructive actions.
 
 ## Search quality (evaluation)
 
@@ -90,26 +111,47 @@ Free-tier notes: requests are rate-limited client-side; a search waits at most 4
 
 ## API
 
-| Method | Path                                                | Notes                                                               |
-| ------ | --------------------------------------------------- | ------------------------------------------------------------------- |
-| GET    | `/healthz`, `/readyz`                               | Liveness; readiness also checks the database                        |
-| GET    | `/v1/auth/providers`                                | Which sign-in methods are enabled                                   |
-| GET    | `/v1/auth/google`                                   | Starts Google sign-in (OIDC + PKCE)                                 |
-| POST   | `/v1/auth/dev-login`                                | `{ email }`, development only                                       |
-| POST   | `/v1/auth/refresh`                                  | Rotates the refresh cookie, returns access token                    |
-| POST   | `/v1/auth/logout`                                   | Revokes the session                                                 |
-| GET    | `/v1/me`                                            | Current user and workspaces                                         |
-| POST   | `/v1/workspaces`                                    | `{ name }`                                                          |
-| GET    | `/v1/workspaces/:id`                                | Members only                                                        |
-| PATCH  | `/v1/workspaces/:id`                                | `{ name }`, owners and admins only                                  |
-| GET    | `/v1/workspaces/:id/connections`                    | Connections with document counts and the last sync run              |
-| POST   | `/v1/workspaces/:id/connections/demo`               | Connects the demo dataset and starts a full sync                    |
-| GET    | `/v1/workspaces/:id/connections/:connectionId`      | One connection                                                      |
-| POST   | `/v1/workspaces/:id/connections/:connectionId/sync` | `{ kind: "incremental" \| "full" }`                                 |
-| DELETE | `/v1/workspaces/:id/connections/:connectionId`      | Disconnect and delete all of its indexed data                       |
-| POST   | `/v1/workspaces/:id/search`                         | `{ query, filters?, mode?: hybrid\|keyword\|semantic, limit? }`     |
-| POST   | `/v1/workspaces/:id/ask`                            | `{ question, conversationId? }` → SSE: meta, token, citations, done |
-| GET    | `/v1/workspaces/:id/conversations`                  | The user's conversations                                            |
-| GET    | `/v1/workspaces/:id/conversations/:conversationId`  | One conversation with its messages                                  |
-| DELETE | `/v1/workspaces/:id/conversations/:conversationId`  | Delete a conversation                                               |
-| POST   | `/v1/messages/:messageId/feedback`                  | `{ rating: 1 \| -1, comment? }`                                     |
+| Method | Path                                                     | Notes                                                               |
+| ------ | -------------------------------------------------------- | ------------------------------------------------------------------- |
+| GET    | `/healthz`, `/readyz`                                    | Liveness; readiness also checks the database                        |
+| GET    | `/v1/auth/providers`                                     | Which sign-in methods are enabled                                   |
+| GET    | `/v1/auth/google`                                        | Starts Google sign-in (OIDC + PKCE)                                 |
+| POST   | `/v1/auth/dev-login`                                     | `{ email }`, development only                                       |
+| POST   | `/v1/auth/refresh`                                       | Rotates the refresh cookie, returns access token                    |
+| POST   | `/v1/auth/logout`                                        | Revokes the session                                                 |
+| GET    | `/v1/me`                                                 | Current user and workspaces                                         |
+| POST   | `/v1/workspaces`                                         | `{ name }`                                                          |
+| GET    | `/v1/workspaces/:id`                                     | Members only                                                        |
+| PATCH  | `/v1/workspaces/:id`                                     | `{ name }`, owners and admins only                                  |
+| GET    | `/v1/workspaces/:id/connections`                         | Connections with document counts and the last sync run              |
+| POST   | `/v1/workspaces/:id/connections/demo`                    | Connects the demo dataset and starts a full sync                    |
+| GET    | `/v1/workspaces/:id/connections/:connectionId`           | One connection                                                      |
+| POST   | `/v1/workspaces/:id/connections/:connectionId/sync`      | `{ kind: "incremental" \| "full" }`                                 |
+| DELETE | `/v1/workspaces/:id/connections/:connectionId`           | Disconnect and delete all of its indexed data                       |
+| POST   | `/v1/workspaces/:id/search`                              | `{ query, filters?, mode?: hybrid\|keyword\|semantic, limit? }`     |
+| POST   | `/v1/workspaces/:id/ask`                                 | `{ question, conversationId? }` → SSE: meta, token, citations, done |
+| GET    | `/v1/workspaces/:id/conversations`                       | The user's conversations                                            |
+| GET    | `/v1/workspaces/:id/conversations/:conversationId`       | One conversation with its messages                                  |
+| DELETE | `/v1/workspaces/:id/conversations/:conversationId`       | Delete a conversation                                               |
+| POST   | `/v1/messages/:messageId/feedback`                       | `{ rating: 1 \| -1, comment? }`                                     |
+| GET    | `/v1/workspaces/:id/members`                             | Members and roles                                                   |
+| PATCH  | `/v1/workspaces/:id/members/:userId`                     | `{ role }` (owners/admins; admins can't touch owners)               |
+| DELETE | `/v1/workspaces/:id/members/:userId`                     | Remove a member, or leave (yourself)                                |
+| GET    | `/v1/workspaces/:id/invites`                             | Pending invites (owners/admins)                                     |
+| POST   | `/v1/workspaces/:id/invites`                             | `{ email, role }` → one-time invite link                            |
+| DELETE | `/v1/workspaces/:id/invites/:inviteId`                   | Revoke an invite                                                    |
+| GET    | `/v1/invites/:token`                                     | Invite preview (workspace, role, inviter)                           |
+| POST   | `/v1/invites/:token/accept`                              | Join (signed-in user's email must match)                            |
+| DELETE | `/v1/workspaces/:id`                                     | Delete a workspace (owners; not your last one)                      |
+| PATCH  | `/v1/workspaces/:id/connections/:connectionId`           | `{ paused?, visibility? }`                                          |
+| GET    | `/v1/workspaces/:id/connections/:connectionId/sync-runs` | Sync history                                                        |
+| GET    | `/v1/workspaces/:id/api-keys`                            | API keys (owners/admins)                                            |
+| POST   | `/v1/workspaces/:id/api-keys`                            | `{ name, scopes }` → full key, shown once                           |
+| DELETE | `/v1/workspaces/:id/api-keys/:keyId`                     | Revoke a key                                                        |
+| GET    | `/v1/workspaces/:id/usage?days=30`                       | Daily searches, questions, tokens; per-model totals (owners/admins) |
+| GET    | `/v1/workspaces/:id/sync-runs?failed=true`               | Recent sync runs across connections (owners/admins)                 |
+| GET    | `/v1/workspaces/:id/audit-log?before=&action=`           | Audit log, newest first (owners/admins)                             |
+| PATCH  | `/v1/me`                                                 | `{ name }`                                                          |
+| POST   | `/v1/auth/logout-all`                                    | Sign out of every device                                            |
+
+Search and ask also accept `X-API-Key: fdr_…` instead of a signed-in session.
